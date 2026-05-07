@@ -1,0 +1,95 @@
+@import "leaflet/dist/leaflet.css";
+@import "tailwindcss";
+
+:root {
+  /* Trackme Brand Colors */
+  --tm-bg-main: #0A0F1C;
+  --tm-bg-secondary: #111827;
+  --tm-bg-sidebar: #0B1220;
+  --tm-bg-card: rgba(17,24,39,0.82);
+  --tm-bg-float: rgba(17,24,39,0.75);
+  --tm-map-overlay: rgba(0,0,0,0.35);
+
+  --tm-accent-blue: #3B82F6;
+  --tm-accent-cyan: #06B6D4;
+  --tm-accent-green: #22C55E;
+  --tm-accent-amber: #F59E0B;
+  --tm-accent-red: #EF4444;
+  --tm-accent-purple: #8B5CF6;
+
+  --tm-text-main: #F9FAFB;
+  --tm-text-secondary: #9CA3AF;
+  --tm-text-disabled: #6B7280;
+
+  --tm-border: rgba(255,255,255,0.08);
+  --tm-glass-blur: blur(18px);
+  --tm-shadow: 0 10px 40px rgba(0,0,0,0.45);
+
+  --font-sora: 'Sora', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+body {
+  background: var(--tm-bg-main);
+  color: var(--tm-text-main);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+h1, h2, h3, .tm-heading {
+  font-family: var(--font-sora), var(--font-inter), sans-serif;
+}
+
+.tm-card, .tm-glass {
+  background: var(--tm-bg-float);
+  border-radius: 20px;
+  border: 1px solid var(--tm-border);
+  box-shadow: var(--tm-shadow);
+  backdrop-filter: var(--tm-glass-blur);
+}
+
+.tm-btn-primary {
+  background: var(--tm-accent-blue);
+  color: white;
+  border-radius: 14px;
+  border: none;
+  font-weight: 600;
+  transition: box-shadow 0.2s;
+}
+.tm-btn-primary:hover {
+  box-shadow: 0 0 20px rgba(59,130,246,0.45);
+}
+.tm-btn-danger {
+  background: var(--tm-accent-red);
+  color: white;
+  border-radius: 14px;
+  border: none;
+  font-weight: 600;
+}
+.tm-btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  color: var(--tm-text-main);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  background: var(--tm-bg-sidebar);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--tm-accent-blue);
+  border-radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0A0F1C;
+    --foreground: #F9FAFB;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

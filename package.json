@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@clerk/nextjs": "^7.3.2",
+    "framer-motion": "^12.38.0"
+  }
+}
