@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[context.production.environment]
+  NODE_ENV = "production"
+  # Add your environment variables here
+  # SENTRY_DSN = "..."
+  # NEXT_PUBLIC_SENTRY_DSN = "..."
+  # MONGODB_URI = "..."
+  # CLERK_SECRET_KEY = "..."
+  # NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "..."

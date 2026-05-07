@@ -1,5 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
+
+async function sendNotification(message: string, type: string = "info") {
+  await fetch("/api/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, type }),
+  });
+}
 import { MapContainer, TileLayer, Circle, Marker } from "react-leaflet";
 
 export default function GeofenceManager() {
@@ -22,6 +30,7 @@ export default function GeofenceManager() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, center, radius }),
     });
+    await sendNotification(`Geofence '${name}' created at [${center.join(", ")}] (radius: ${radius}m)`, "info");
     setName("");
     setRadius(1000);
     // Refresh

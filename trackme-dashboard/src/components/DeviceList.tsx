@@ -1,5 +1,6 @@
-import ShareDevice from "./ShareDevice";
+
 "use client";
+import ShareDevice from "./ShareDevice";
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 
@@ -53,34 +54,35 @@ export default function DeviceList() {
           </thead>
           <tbody>
             {devices.map((d, idx) => (
-              <tr key={d.phone + d.imei + idx}>
-                <td className="border px-2 py-1">{d.phone}</td>
-                <td className="border px-2 py-1">{d.imei}</td>
-                <td className="border px-2 py-1">{d.name}</td>
-                <td className="border px-2 py-1">{d.owner}</td>
-                <td className="border px-2 py-1">{d.registeredAt}</td>
-                <td className="border px-2 py-1">
-                  {user && d.owner === user.id ? (
-                    <button
-                      className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 disabled:opacity-50"
-                      onClick={() => removeDevice(d.phone, d.imei)}
-                      disabled={removing === d.phone + d.imei}
-                    >
-                      {removing === d.phone + d.imei ? "Removing..." : "Remove"}
-                    </button>
-                  ) : (
-                    <span className="text-gray-400">Not owner</span>
-                  )}
-                </td>
-              </tr>
-              {user && d.owner === user.id && (
-                <tr>
-                  <td colSpan={6} className="border-t px-2 py-1 bg-zinc-50 dark:bg-zinc-800">
-                    <ShareDevice device={d} />
+              <>
+                <tr key={d.phone + d.imei + idx}>
+                  <td className="border px-2 py-1">{d.phone}</td>
+                  <td className="border px-2 py-1">{d.imei}</td>
+                  <td className="border px-2 py-1">{d.name}</td>
+                  <td className="border px-2 py-1">{d.owner}</td>
+                  <td className="border px-2 py-1">{d.registeredAt}</td>
+                  <td className="border px-2 py-1">
+                    {user && d.owner === user.id ? (
+                      <button
+                        className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 disabled:opacity-50"
+                        onClick={() => removeDevice(d.phone, d.imei)}
+                        disabled={removing === d.phone + d.imei}
+                      >
+                        {removing === d.phone + d.imei ? "Removing..." : "Remove"}
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">Not owner</span>
+                    )}
                   </td>
                 </tr>
-              )}
-              </tr>
+                {user && d.owner === user.id && (
+                  <tr>
+                    <td colSpan={6} className="border-t px-2 py-1 bg-zinc-50 dark:bg-zinc-800">
+                      <ShareDevice device={d} />
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>

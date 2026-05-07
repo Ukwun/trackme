@@ -1,0 +1,95 @@
+Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+
+const path = require('path');
+const util = require('../util.js');
+
+/**
+ * Generate the value injection rules for client and server in turbopack config.
+ */
+function generateValueInjectionRules({
+  routeManifest,
+  nextJsVersion,
+  tunnelPath,
+  vercelCronsConfig,
+}
+
+) {
+  const rules = [];
+  const isomorphicValues = {};
+  let clientValues = {};
+  let serverValues = {};
+
+  if (nextJsVersion) {
+    // This is used to determine version-based dev-symbolication behavior
+    isomorphicValues._sentryNextJsVersion = nextJsVersion;
+  }
+
+  if (routeManifest) {
+    clientValues._sentryRouteManifest = JSON.stringify(routeManifest);
+  }
+
+  // Inject tunnel route path for both client and server
+  if (tunnelPath) {
+    isomorphicValues._sentryRewritesTunnelPath = tunnelPath;
+  }
+
+  // Inject Vercel crons config for server-side cron auto-instrumentation
+  if (vercelCronsConfig) {
+    serverValues._sentryVercelCronsConfig = JSON.stringify(vercelCronsConfig);
+  }
+  // Inject server modules (matching webpack's __SENTRY_SERVER_MODULES__ behavior)
+  // Use process.cwd() to get the project directory at build time
+  serverValues.__SENTRY_SERVER_MODULES__ = util.getPackageModules(process.cwd());
+
+  if (Object.keys(isomorphicValues).length > 0) {
+    clientValues = { ...clientValues, ...isomorphicValues };
+    serverValues = { ...serverValues, ...isomorphicValues };
+  }
+
+  const hasConditionSupport = nextJsVersion ? util.supportsTurbopackRuleCondition(nextJsVersion) : false;
+
+  // Client value injection
+  if (Object.keys(clientValues).length > 0) {
+    rules.push({
+      matcher: '**/instrumentation-client.*',
+      rule: {
+        // Only run on user code, not node_modules or Next.js internals
+        // condition field is only supported in Next.js 16+
+        ...(hasConditionSupport ? { condition: { not: 'foreign' } } : {}),
+        loaders: [
+          {
+            loader: path.resolve(__dirname, '..', 'loaders', 'valueInjectionLoader.js'),
+            options: {
+              values: clientValues,
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  // Server value injection
+  if (Object.keys(serverValues).length > 0) {
+    rules.push({
+      matcher: '**/instrumentation.*',
+      rule: {
+        // Only run on user code, not node_modules or Next.js internals
+        // condition field is only supported in Next.js 16+
+        ...(hasConditionSupport ? { condition: { not: 'foreign' } } : {}),
+        loaders: [
+          {
+            loader: path.resolve(__dirname, '..', 'loaders', 'valueInjectionLoader.js'),
+            options: {
+              values: serverValues,
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  return rules;
+}
+
+exports.generateValueInjectionRules = generateValueInjectionRules;
+//# sourceMappingURL=generateValueInjectionRules.js.map

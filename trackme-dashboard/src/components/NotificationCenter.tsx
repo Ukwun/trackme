@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import { setupRealtime } from '../realtime';
 
 export default function NotificationCenter() {
   const [notifications, setNotifications] = useState<any[]>([]);
   useEffect(() => {
+    let unsub = () => {};
     async function fetchNotifications() {
       const res = await fetch("/api/notifications");
       const data = await res.json();
@@ -11,7 +13,19 @@ export default function NotificationCenter() {
     }
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 10000);
-    return () => clearInterval(interval);
+    // Real-time updates
+    const socket = setupRealtime({
+      onNotification: (data) => {
+        fetchNotifications();
+      }
+    });
+    unsub = () => {
+      socket?.off && socket.off('notification-update');
+    };
+    return () => {
+      clearInterval(interval);
+      unsub();
+    };
   }, []);
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
