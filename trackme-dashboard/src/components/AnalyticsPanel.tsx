@@ -100,7 +100,7 @@ export default function AnalyticsPanel() {
       )}
       {mode === "anomalies" && anomalies.length > 0 && (
         <div className="mt-2">
-          <div className="font-semibold text-xs mb-1">Anomalous Days (activity > 2x avg):</div>
+          <div className="font-semibold text-xs mb-1">Anomalous Days (activity {'>'} 2x avg):</div>
           <ul className="text-xs">
             {anomalies.map((a, idx) => (
               <li key={idx}>{a._id}: <span className="font-semibold">{a.count}</span></li>

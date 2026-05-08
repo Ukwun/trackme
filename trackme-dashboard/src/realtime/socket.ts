@@ -10,7 +10,7 @@ export function connectSocket() {
 }
 
 
-export function sendLocationUpdate(data: { phone: string; imei: string; lat: number; lng: number }) {
+export function sendLocationUpdate(data: { deviceId: string; lat: number; lng: number; speed?: number; heading?: number; battery?: number; timestamp?: number }) {
   if (!socket) connectSocket();
   socket?.emit("location-update", data);
 }

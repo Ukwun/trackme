@@ -7,6 +7,8 @@ import GeofencePanel from "./GeofencePanel";
 import IncidentPanel from "./IncidentPanel";
 import AnalyticsPanel from "./AnalyticsPanel";
 
+
+export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <>

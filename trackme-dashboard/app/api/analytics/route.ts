@@ -5,6 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getDb } from "../../../src/api/db";
 import { Server } from "socket.io";
 
+export async function POST(req: Request) {
   const { userId } = auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();

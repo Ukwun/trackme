@@ -3,6 +3,7 @@ import type { NextApiRequest } from "next";
 import type { Server as HTTPServer } from "http";
 import type { Socket as NetSocket } from "net";
 import type { NextApiResponse } from "next";
+import { getDb } from "../../src/api/db";
 
 export const config = {
   api: {
@@ -31,7 +32,15 @@ function getIO(server: HTTPServer) {
       },
     });
     io.on("connection", (socket) => {
-      socket.on("location-update", (data) => {
+      socket.on("location-update", async (data) => {
+        // Store location update in MongoDB
+        try {
+          const db = await getDb();
+          // Accepts: { deviceId, lat, lng, speed, heading, battery, timestamp }
+          await db.collection("location_history").insertOne({ ...data, receivedAt: new Date().toISOString() });
+        } catch (e) {
+          // Optionally log error
+        }
         io.emit("location-update", data);
       });
       socket.on("analytics-update", (data) => {

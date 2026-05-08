@@ -1,6 +1,7 @@
 
 "use client";
 import ShareDevice from "./ShareDevice";
+import DeviceHistory from "./DeviceHistory";
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 
@@ -73,6 +74,11 @@ export default function DeviceList() {
                     ) : (
                       <span className="text-gray-400">Not owner</span>
                     )}
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={6}>
+                    <DeviceHistory deviceId={d.phone || d.deviceId || d.imei} />
                   </td>
                 </tr>
                 {user && d.owner === user.id && (
