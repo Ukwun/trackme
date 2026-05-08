@@ -1,20 +1,18 @@
-
 "use client";
 
 import NotificationCenter from "../src/components/NotificationCenter";
+import RightIntelligencePanel from "../src/components/RightIntelligencePanel";
 import AuthHeader from "../src/components/AuthHeader";
 import AuthForm from "../src/components/AuthForm";
 import TwoFactorSetup from "../src/components/TwoFactorSetup";
 import UserManagement from "../src/components/UserManagement";
 import ActivityLog from "../src/components/ActivityLog";
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import MobileClientSimulator from "../src/components/MobileClientSimulator";
 import RegisterDevice from "../src/components/RegisterDevice";
 import DeviceList from "../src/components/DeviceList";
 import SharedDevices from "../src/components/SharedDevices";
 import Map, { Marker, NavigationControl, Source, Layer } from "react-map-gl";
-import { Editor, DrawPolygonMode, EditingMode } from "react-map-gl-draw";
 import { connectSocket, onLocationUpdate } from "../src/realtime/socket";
 import Supercluster from "supercluster";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -27,7 +25,7 @@ function CustomMapPulse() {
       initial={{ scale: 0.7, opacity: 0.7 }}
       animate={{ scale: [0.7, 1.2, 0.7], opacity: [0.7, 0.2, 0.7] }}
       transition={{ duration: 1.5, repeat: Infinity }}
-      className="absolute left-[-8px] top-[-8px] w-8 h-8 rounded-full border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none"
+      className="absolute -left-2 -top-2 w-8 h-8 rounded-full border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none"
     />
   );
 }
@@ -42,6 +40,8 @@ function CustomMapPulse() {
     longitude: 3.3792,
     zoom: 7,
   });
+  const [selectedUnit, setSelectedUnit] = useState<any>(null);
+  const mapRef = useRef<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState<any>(null);
@@ -87,14 +87,15 @@ function CustomMapPulse() {
     setEditorFeatures(data);
   }
   function saveGeofence() {
+    if (!token) {
+      setShow2FA(true); // or show auth form/modal as appropriate
+      return;
+    }
     if (editorFeatures.length > 0) {
       // Only support one drawn polygon at a time for now
       const poly = editorFeatures[0];
       const coords = poly.geometry.coordinates[0];
       const newGeofence = {
-          if (!token) {
-            return <AuthForm onAuth={(t, r) => { setToken(t); setRole(r); }} />;
-          }
         id: `GEO_${Date.now()}`,
         name: `Custom Geofence ${Date.now()}`,
         type: "Custom",
@@ -137,10 +138,12 @@ function CustomMapPulse() {
       <NotificationCenter />
       <AuthHeader />
       <main className="w-full max-w-6xl flex flex-col items-center justify-start gap-6 px-2 sm:px-8 py-8">
-        <h1 className="tm-heading text-3xl md:text-4xl font-bold mb-2 text-[var(--tm-accent-blue)]" style={{fontFamily: 'Sora, Inter, sans-serif'}}>Trackme Dashboard</h1>
-        <p className="mb-4 text-[var(--tm-text-secondary)]">Search and view tracked phone numbers on the map in real time.</p>
+        <h1 className="tm-heading text-3xl md:text-4xl font-bold mb-2 text-[--tm-accent-blue]" style={{fontFamily: 'Sora, Inter, sans-serif'}}>Trackme Dashboard</h1>
+        <p className="mb-4 text-[--tm-text-secondary]">Search and view tracked phone numbers on the map in real time.</p>
         <div className="flex flex-col md:flex-row w-full gap-6">
           <div className="flex-1 flex flex-col gap-6">
+            {/* Incident Creation */}
+            <CreateIncident onCreated={setIncident} />
             {/* Map and tracked devices */}
             <div className="tm-card p-4">
               <input
@@ -148,9 +151,9 @@ function CustomMapPulse() {
                 placeholder="Search phone number..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="mb-4 p-2 rounded w-full bg-[var(--tm-bg-secondary)] border border-[var(--tm-border)] text-[var(--tm-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--tm-accent-blue)]"
+                className="mb-4 p-2 rounded w-full bg-[--tm-bg-secondary] border border-[--tm-border] text-[--tm-text-main] focus:outline-none focus:ring-2 focus:ring-[--tm-accent-blue]"
               />
-              <div className="w-full h-96 rounded-2xl overflow-hidden border border-[var(--tm-border)] shadow-lg relative">
+              <div className="w-full h-96 rounded-2xl overflow-hidden border border-[--tm-border] shadow-lg relative">
                 <div className="absolute z-10 left-4 top-4 flex gap-2">
                   <button
                     className={`px-3 py-1 rounded bg-blue-700 text-white text-xs font-semibold shadow ${drawMode ? 'opacity-80' : ''}`}
@@ -164,10 +167,12 @@ function CustomMapPulse() {
                   )}
                 </div>
                 <Map
+                  ref={mapRef}
                   mapboxAccessToken={MAPBOX_TOKEN}
                   initialViewState={viewport}
                   mapStyle="mapbox://styles/mapbox/dark-v11"
                   style={{ width: "100%", height: "100%", borderRadius: "1rem" }}
+                  onMove={evt => setViewport(evt.viewState)}
                 >
                   <NavigationControl position="top-left" />
                   {/* Heatmap Layer for device activity */}
@@ -211,7 +216,15 @@ function CustomMapPulse() {
                     if (feature.properties.cluster) {
                       return (
                         <Marker key={"cluster-" + idx} longitude={lng} latitude={lat} anchor="center">
-                          <div className="bg-blue-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-blue-300 shadow-lg">
+                          <div
+                            className="bg-blue-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-blue-300 shadow-lg cursor-pointer"
+                            onClick={() => {
+                              // Zoom in on cluster click
+                              if (mapRef.current) {
+                                mapRef.current.flyTo({ center: [lng, lat], zoom: Math.min(viewport.zoom + 2, 18), duration: 1200 });
+                              }
+                            }}
+                          >
                             {feature.properties.point_count_abbreviated}
                           </div>
                         </Marker>
@@ -219,15 +232,24 @@ function CustomMapPulse() {
                     }
                     return (
                       <Marker key={feature.properties.deviceId + idx} longitude={lng} latitude={lat} anchor="center">
-                        <CustomMapPulse />
-                        <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[var(--tm-border)]">
-                          <div><b>Device:</b> {feature.properties.deviceId}</div>
-                          <div><b>Lat:</b> {lat}</div>
-                          <div><b>Lng:</b> {lng}</div>
-                          <div><b>Speed:</b> {feature.properties.speed ?? "-"} km/h</div>
-                          <div><b>Heading:</b> {feature.properties.heading ?? "-"}°</div>
-                          <div><b>Battery:</b> {feature.properties.battery ?? "-"}%</div>
-                          <div><b>Time:</b> {feature.properties.timestamp ? new Date(feature.properties.timestamp * 1000).toLocaleString() : "-"}</div>
+                        <div
+                          className={`relative cursor-pointer ${selectedUnit && selectedUnit.deviceId === feature.properties.deviceId ? 'ring-2 ring-blue-400' : ''}`}
+                          onClick={() => {
+                            setSelectedUnit(feature.properties);
+                            if (mapRef.current) {
+                              mapRef.current.flyTo({ center: [lng, lat], zoom: Math.max(viewport.zoom, 14), duration: 1200 });
+                            }
+                          }}
+                        >
+                          <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[--tm-border]">
+                            <div><b>Device:</b> {feature.properties.deviceId}</div>
+                            <div><b>Lat:</b> {lat}</div>
+                            <div><b>Lng:</b> {lng}</div>
+                            <div><b>Speed:</b> {feature.properties.speed ?? "-"} km/h</div>
+                            <div><b>Heading:</b> {feature.properties.heading ?? "-"}°</div>
+                            <div><b>Battery:</b> {feature.properties.battery ?? "-"}%</div>
+                            <div><b>Time:</b> {feature.properties.timestamp ? new Date(feature.properties.timestamp * 1000).toLocaleString() : "-"}</div>
+                          </div>
                         </div>
                       </Marker>
                     );
@@ -248,10 +270,10 @@ function CustomMapPulse() {
                   {/* Incident Marker */}
                   {incident && incident.location && Array.isArray(incident.location) && incident.location.length === 2 && (
                     <Marker longitude={incident.location[1]} latitude={incident.location[0]} anchor="center">
-                      <div className="bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-red-300 shadow-lg animate-pulse">
+                      <div className="bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-red-300 shadow-lg">
                         !
                       </div>
-                      <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[var(--tm-border)]">
+                      <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[--tm-border]">
                         <div><b>Incident:</b> {incident.type}</div>
                         <div><b>Status:</b> {incident.status}</div>
                         <div><b>ID:</b> {incident.id}</div>
@@ -296,7 +318,7 @@ function CustomMapPulse() {
             </div>
             <div className="tm-card p-4">
               <h2 className="tm-heading text-xl font-semibold mb-2">Tracked Devices (Live)</h2>
-              <table className="w-full table-auto border-collapse text-[var(--tm-text-main)]">
+              <table className="w-full table-auto border-collapse text-[--tm-text-main]">
                 <thead>
                   <tr>
                     <th className="border px-2 py-1">Device ID</th>
@@ -310,7 +332,17 @@ function CustomMapPulse() {
                 </thead>
                 <tbody>
                   {filteredLocations.map((loc, idx) => (
-                    <tr key={loc.deviceId + idx}>
+                    <tr
+                      key={loc.deviceId + idx}
+                      className={selectedUnit && selectedUnit.deviceId === loc.deviceId ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
+                      onClick={() => {
+                        setSelectedUnit(loc);
+                        if (mapRef.current) {
+                          mapRef.current.flyTo({ center: [loc.lng, loc.lat], zoom: Math.max(viewport.zoom, 14), duration: 1200 });
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <td className="border px-2 py-1">{loc.deviceId}</td>
                       <td className="border px-2 py-1">{loc.lat}</td>
                       <td className="border px-2 py-1">{loc.lng}</td>
@@ -329,6 +361,10 @@ function CustomMapPulse() {
             {role === "super_admin" && <UserManagement token={token} />}
           </div>
           <div className="flex-1 flex flex-col gap-6 min-w-[320px] max-w-md">
+            {/* Right Intelligence Panel */}
+            {selectedUnit && (
+              <RightIntelligencePanel selectedUnit={selectedUnit} onClose={() => setSelectedUnit(null)} />
+            )}
             <div className="tm-card p-4 mb-4">
               <RegisterDevice />
             </div>

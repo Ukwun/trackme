@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import MovementPlayback from "./MovementPlayback";
 
 export default function DeviceHistory({ deviceId }: { deviceId: string }) {
   const [history, setHistory] = useState<any[]>([]);
@@ -34,6 +35,7 @@ export default function DeviceHistory({ deviceId }: { deviceId: string }) {
           </li>
         ))}
       </ul>
+      <MovementPlayback deviceId={deviceId} />
     </div>
   );
 }

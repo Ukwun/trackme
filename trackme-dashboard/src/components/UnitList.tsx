@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { connectSocket } from "../realtime/socket";
 
-async function sendNotification(message: string, type: string = "info") {
+async function sendNotification(message: string, type: string = "info", delivery: string[] = ["in-app"]) {
   await fetch("/api/notifications", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, type }),
+    body: JSON.stringify({ message, type, delivery }),
   });
 }
 
@@ -20,7 +20,7 @@ export default function UnitList() {
       // Example: Notify if any unit goes offline
       units.forEach((u: any) => {
         if (u.status === "Offline") {
-          sendNotification(`Unit ${u.name} is offline`, "warning");
+          sendNotification(`Unit ${u.name} is offline`, "warning", ["in-app", "sms"]);
         }
       });
     });
@@ -48,3 +48,11 @@ export default function UnitList() {
     </div>
   );
 }
+
+// Example triggers for notification types (to be called in real logic):
+// sendNotification("Unit XYZ is offline", "warning", ["in-app", "sms"]);
+// sendNotification("PANIC BUTTON: UNIT_203 needs immediate assistance!", "danger", ["in-app", "push", "sms"]);
+// sendNotification("Device entered restricted zone", "warning", ["in-app", "push"]);
+// sendNotification("Unit battery low", "warning", ["in-app", "email"]);
+// sendNotification("Route deviation detected", "danger", ["in-app", "push"]);
+// sendNotification("Emergency escalation required!", "danger", ["in-app", "push", "sms", "email"]);

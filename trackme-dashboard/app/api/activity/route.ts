@@ -1,30 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { logActivity, getUserActivity } from "../../../src/api/activity";
-import jwt from "jsonwebtoken";
+import { auth } from "@clerk/nextjs/server";
+import { hasPermission } from "../../../src/api/permissions";
+import { rateLimit } from "../../../src/api/rateLimit";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
-
-function verifyToken(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (!auth) return null;
-  try {
-    return jwt.verify(auth.replace("Bearer ", ""), JWT_SECRET);
-  } catch {
-    return null;
-  }
-}
-
-export async function POST(req: Request) {
-  const user = verifyToken(req);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "analytics:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":activity:post")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const { action, meta } = await req.json();
-  await logActivity(user.userId, action, meta);
+  await logActivity({ userId, action, meta });
   return NextResponse.json({ success: true });
 }
 
-export async function GET(req: Request) {
-  const user = verifyToken(req);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const logs = await getUserActivity(user.userId);
+export async function GET(req: NextRequest) {
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "analytics:view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":activity:get")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+  const logs = await getUserActivity(userId);
   return NextResponse.json({ logs });
 }

@@ -3,14 +3,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getDb } from "../../../src/api/db";
-import { Server } from "socket.io";
+import { logActivity } from "../../../src/api/logActivity";
+import { hasPermission } from "../../../src/api/permissions";
+import { rateLimit } from "../../../src/api/rateLimit";
 
 export async function POST(req: Request) {
-  const { userId } = auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "analytics:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":analytics:post")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const body = await req.json();
   const db = await getDb();
   await db.collection("analytics").insertOne({ userId, ...body, createdAt: new Date().toISOString() });
+  await logActivity({ userId, action: "analytics:create", meta: body });
   // Emit real-time event
   try {
     if ((global as any).io) {
@@ -21,15 +26,16 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const { userId } = auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "analytics:view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":analytics:get")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const db = await getDb();
   const url = req?.url || "";
   const params = new URL(url, 'http://localhost').searchParams;
   const mode = params.get('mode');
 
   if (mode === 'trends') {
-    // Example: Count actions per day for the last 7 days
     const pipeline = [
       { $match: { userId } },
       { $addFields: { day: { $substr: ["$createdAt", 0, 10] } } },
@@ -38,11 +44,11 @@ export async function GET(req: Request) {
       { $limit: 7 }
     ];
     const trends = await db.collection("analytics").aggregate(pipeline).toArray();
+    await logActivity({ userId, action: "analytics:trends", meta: {} });
     return NextResponse.json({ trends });
   }
 
   if (mode === 'anomalies') {
-    // Example: Find days with more than 2x the average activity
     const pipeline = [
       { $match: { userId } },
       { $addFields: { day: { $substr: ["$createdAt", 0, 10] } } },
@@ -53,10 +59,13 @@ export async function GET(req: Request) {
     const days = await db.collection("analytics").aggregate(pipeline).toArray();
     const avg = days.reduce((sum, d) => sum + d.count, 0) / (days.length || 1);
     const anomalies = days.filter(d => d.count > 2 * avg);
+    await logActivity({ userId, action: "analytics:anomalies", meta: {} });
     return NextResponse.json({ anomalies, avg });
   }
 
   // Default: return all analytics
   const analytics = await db.collection("analytics").find({ userId }).sort({ createdAt: -1 }).toArray();
+  await logActivity({ userId, action: "analytics:list", meta: {} });
+  return NextResponse.json({ analytics });
   return NextResponse.json({ analytics });
 }

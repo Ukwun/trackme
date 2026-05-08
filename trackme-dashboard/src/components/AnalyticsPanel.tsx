@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { setupRealtime } from '../realtime';
+import AnalyticsCharts from "./AnalyticsCharts";
 
 type AnalyticsMode = "all" | "trends" | "anomalies";
 
@@ -117,6 +118,7 @@ export default function AnalyticsPanel() {
       {mode === "anomalies" && anomalies.length === 0 && !loading && (
         <div className="text-[var(--tm-text-secondary)]">No anomalies detected.</div>
       )}
+      <AnalyticsCharts />
     </div>
   );
 }

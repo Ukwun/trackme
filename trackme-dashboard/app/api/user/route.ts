@@ -1,33 +1,27 @@
-import { NextResponse } from "next/server";
-import { getUserById, getUserByEmail, updateUserRole, listUsers } from "../../../src/api/user";
-import jwt from "jsonwebtoken";
+import { NextRequest, NextResponse } from "next/server";
+import { listUsers, updateUserRole } from "../../../src/api/user";
+import { auth } from "@clerk/nextjs/server";
+import { logActivity } from "../../../src/api/logActivity";
+import { hasPermission } from "../../../src/api/permissions";
+import { rateLimit } from "../../../src/api/rateLimit";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
-
-function verifyToken(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (!auth) return null;
-  try {
-    return jwt.verify(auth.replace("Bearer ", ""), JWT_SECRET);
-  } catch {
-    return null;
-  }
-}
-
-export async function GET(req: Request) {
-  const user = verifyToken(req);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // Only super_admin can list all users
-  if (user.role !== "super_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: NextRequest) {
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "admin:view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":admin:get")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const users = await listUsers();
+  await logActivity({ userId, action: "admin:list-users", meta: {} });
   return NextResponse.json({ users });
 }
 
-export async function PATCH(req: Request) {
-  const user = verifyToken(req);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "super_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { userId, role } = await req.json();
-  await updateUserRole(userId, role);
+export async function PATCH(req: NextRequest) {
+  const { userId, sessionClaims } = auth();
+  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role: sessionClaims.role }, "admin:edit")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!rateLimit(userId+":admin:patch")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+  const { userId: targetUserId, role } = await req.json();
+  await updateUserRole(targetUserId, role);
+  await logActivity({ userId, action: "admin:change-role", meta: { targetUserId, role } });
   return NextResponse.json({ success: true });
 }

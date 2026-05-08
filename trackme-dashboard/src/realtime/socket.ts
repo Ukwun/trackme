@@ -15,6 +15,18 @@ export function sendLocationUpdate(data: { deviceId: string; lat: number; lng: n
   socket?.emit("location-update", data);
 }
 
+// Send location update to API for geofence event detection
+export async function sendLocationUpdateWithGeofence(data: { deviceId: string; lat: number; lng: number; speed?: number; heading?: number; battery?: number; timestamp?: number }) {
+  // Send to socket for real-time map
+  sendLocationUpdate(data);
+  // Send to API for geofence event detection
+  await fetch("/api/location-update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceId: data.deviceId, lat: data.lat, lng: data.lng })
+  });
+}
+
 export function onLocationUpdate(callback: (data: any) => void) {
   if (!socket) connectSocket();
   socket?.on("location-update", callback);
