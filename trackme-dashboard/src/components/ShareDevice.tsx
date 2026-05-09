@@ -1,18 +1,25 @@
 "use client";
 import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { getClientSession } from "../lib/clientAuth";
 
 export default function ShareDevice({ device }: { device: any }) {
   const [targetUserId, setTargetUserId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const { user } = useUser();
+  const [session] = useState(() => getClientSession());
 
   async function handleShare(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
+    if (!session.token) {
+      setStatus("Authentication required");
+      return;
+    }
     const res = await fetch("/api/devices/share", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
       body: JSON.stringify({ phone: device.phone, imei: device.imei, targetUserId }),
     });
     const data = await res.json();
@@ -24,7 +31,7 @@ export default function ShareDevice({ device }: { device: any }) {
     }
   }
 
-  if (!user || device.owner !== user.id) return null;
+  if (!session.userId || device.owner !== session.userId) return null;
 
   return (
     <form onSubmit={handleShare} className="flex gap-2 mt-2">

@@ -4,6 +4,7 @@ import type { Server as HTTPServer } from "http";
 import type { Socket as NetSocket } from "net";
 import type { NextApiResponse } from "next";
 import { getDb } from "../../src/api/db";
+import { registerRealtimeServer } from "../../src/realtime/server";
 
 export const config = {
   api: {
@@ -17,7 +18,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return;
   }
 
-  const io = getIO(res.socket.server);
+  const io = getIO((res.socket as any).server);
   res.end();
 }
 
@@ -46,11 +47,21 @@ function getIO(server: HTTPServer) {
       socket.on("analytics-update", (data) => {
         io.emit("analytics-update", data);
       });
+      socket.on("incident-update", (data) => {
+        io.emit("incident-update", data);
+      });
+      socket.on("geofence-update", (data) => {
+        io.emit("geofence-update", data);
+      });
+      socket.on("unit-update", (data) => {
+        io.emit("unit-update", data);
+      });
       socket.on("notification-update", (data) => {
         io.emit("notification-update", data);
       });
     });
     (server as any).io = io;
+    registerRealtimeServer(io);
   }
   return (server as any).io;
 }

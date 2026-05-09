@@ -1,386 +1,293 @@
 "use client";
 
-import NotificationCenter from "../src/components/NotificationCenter";
-import RightIntelligencePanel from "../src/components/RightIntelligencePanel";
+import { useEffect, useMemo, useState } from "react";
 import AuthHeader from "../src/components/AuthHeader";
 import AuthForm from "../src/components/AuthForm";
-import TwoFactorSetup from "../src/components/TwoFactorSetup";
-import UserManagement from "../src/components/UserManagement";
+import NotificationCenter from "../src/components/NotificationCenter";
 import ActivityLog from "../src/components/ActivityLog";
-import { useEffect, useRef, useState } from "react";
-import MobileClientSimulator from "../src/components/MobileClientSimulator";
+import GeofencePanel from "../src/components/GeofencePanel";
+import IncidentPanel from "../src/components/IncidentPanel";
+import RightIntelligencePanel from "../src/components/RightIntelligencePanel";
 import RegisterDevice from "../src/components/RegisterDevice";
 import DeviceList from "../src/components/DeviceList";
 import SharedDevices from "../src/components/SharedDevices";
-import Map, { Marker, NavigationControl, Source, Layer } from "react-map-gl";
-import { connectSocket, onLocationUpdate } from "../src/realtime/socket";
-import Supercluster from "supercluster";
-import "mapbox-gl/dist/mapbox-gl.css";
+import MobileClientSimulator from "../src/components/MobileClientSimulator";
+import UserManagement from "../src/components/UserManagement";
+import SuperAdminDashboard from "../src/components/dashboards/SuperAdminDashboard";
+import ControlRoomDashboard from "../src/components/dashboards/ControlRoomDashboard";
+import DispatcherDashboard from "../src/components/dashboards/DispatcherDashboard";
+import PatrolOfficerDashboard from "../src/components/dashboards/PatrolOfficerDashboard";
+import AnalystDashboard from "../src/components/dashboards/AnalystDashboard";
+import FieldAgentDashboard from "../src/components/dashboards/FieldAgentDashboard";
+import Map from "../src/components/Map";
+import { connectSocket } from "../src/realtime/socket";
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoidHJhY2ttZXVzZXIiLCJhIjoiY2xkZ2Z2b2JwMGJ6dTNrbzF2b2Z6b2J1dSJ9.2v1Qw1Qw1Qw1Qw1Qw1Qw1Q"; // Replace with your token
-
-function CustomMapPulse() {
+function StatCard({ label, value, helper }: { label: string; value: string; helper: string }) {
   return (
-    <motion.div
-      initial={{ scale: 0.7, opacity: 0.7 }}
-      animate={{ scale: [0.7, 1.2, 0.7], opacity: [0.7, 0.2, 0.7] }}
-      transition={{ duration: 1.5, repeat: Infinity }}
-      className="absolute -left-2 -top-2 w-8 h-8 rounded-full border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none"
-    />
+    <div className="tm-card rounded-2xl border border-[var(--tm-border)] bg-[rgba(15,23,42,0.72)] p-4 backdrop-blur-sm">
+      <div className="text-xs uppercase tracking-[0.24em] text-[var(--tm-text-secondary)]">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-[var(--tm-text-main)]">{value}</div>
+      <div className="mt-1 text-sm text-[var(--tm-text-secondary)]">{helper}</div>
+    </div>
   );
 }
 
+export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [locations, setLocations] = useState<any[]>([]);
-  const [unitTrails, setUnitTrails] = useState<{[id: string]: Array<[number, number]>}>({});
-  const [geofences, setGeofences] = useState<any[]>([]);
-  const [incident, setIncident] = useState<any>(null);
-  const [viewport, setViewport] = useState({
-    latitude: 6.5244,
-    longitude: 3.3792,
-    zoom: 7,
-  });
+  const [unitTrails, setUnitTrails] = useState<Record<string, Array<[number, number]>>>({});
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
-  const mapRef = useRef<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [drawMode, setDrawMode] = useState<any>(null);
-  const [editorFeatures, setEditorFeatures] = useState<any[]>([]);
-  const [show2FA, setShow2FA] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncAuthState = () => {
+      const savedToken = window.localStorage.getItem("tm_auth_token");
+      const savedRole = window.localStorage.getItem("tm_auth_role");
+      setToken(savedToken);
+      setRole(savedRole);
+    };
+
+    syncAuthState();
+    window.addEventListener("tm-auth-changed", syncAuthState);
+    return () => window.removeEventListener("tm-auth-changed", syncAuthState);
+  }, []);
 
   useEffect(() => {
     const socket = connectSocket();
-    onLocationUpdate((data) => {
-      setLocations((prev) => {
-        // Only keep the latest location per deviceId
-        const filtered = prev.filter((l) => l.deviceId !== data.deviceId);
-        // Update trails
-        setUnitTrails((trails) => {
-          const id = data.deviceId;
-          const prevTrail = trails[id] || [];
-          const newTrail = [...prevTrail, [data.lng, data.lat]].slice(-20); // last 20 points
-          return { ...trails, [id]: newTrail };
-        });
+
+    const handleLocationUpdate = (data: any) => {
+      setLocations((previous) => {
+        const filtered = previous.filter((location) => location.deviceId !== data.deviceId);
         return [...filtered, data];
       });
-    });
-    socket.on("geofence-update", setGeofences);
-    socket.on("incident-update", setIncident);
+
+      setUnitTrails((previous) => {
+        const trail = previous[data.deviceId] || [];
+        const nextTrail = [...trail, [data.lng, data.lat]].slice(-20);
+        return { ...previous, [data.deviceId]: nextTrail };
+      });
+
+      setSelectedUnit((current: any) => (current?.deviceId === data.deviceId ? data : current));
+    };
+
+    socket.on("location-update", handleLocationUpdate);
+    socket.on("geofence-update", () => undefined);
+    socket.on("incident-update", () => undefined);
+
     return () => {
-      socket.off("geofence-update", setGeofences);
-      socket.off("incident-update", setIncident);
+      socket.off("location-update", handleLocationUpdate);
+      socket.off("geofence-update");
+      socket.off("incident-update");
     };
   }, []);
 
-  // Check if 2FA is enabled (call /api/2fa?check=1)
-  useEffect(() => {
-    if (!token) return;
-    fetch("/api/2fa?check=1", { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setShow2FA(!data.enabled);
-      });
-  }, [token]);
+  const filteredLocations = useMemo(() => {
+    if (!search.trim()) return locations;
+    const needle = search.trim().toLowerCase();
+    return locations.filter((location) => String(location.deviceId || "").toLowerCase().includes(needle));
+  }, [locations, search]);
 
-  // Handle geofence draw/save
-  function onEditorUpdate({ data }: any) {
-    setEditorFeatures(data);
-  }
-  function saveGeofence() {
-    if (!token) {
-      setShow2FA(true); // or show auth form/modal as appropriate
-      return;
-    }
-    if (editorFeatures.length > 0) {
-      // Only support one drawn polygon at a time for now
-      const poly = editorFeatures[0];
-      const coords = poly.geometry.coordinates[0];
-      const newGeofence = {
-        id: `GEO_${Date.now()}`,
-        name: `Custom Geofence ${Date.now()}`,
-        type: "Custom",
-        status: "Active",
-        coordinates: coords,
-      };
-      const socket = connectSocket();
-      socket.emit("geofence-update", [newGeofence, ...geofences]);
-      setEditorFeatures([]);
-      setDrawMode(null);
-    }
-  }
+  const summary = useMemo(() => {
+    const total = locations.length;
+    const moving = locations.filter((location) => Number(location.speed || 0) > 0).length;
+    const lowBattery = locations.filter((location) => Number(location.battery || 100) < 25).length;
+    const activeTrails = Object.keys(unitTrails).length;
 
-  const filteredLocations = search
-    ? locations.filter((l) => (l.deviceId || "").includes(search))
-    : locations;
-
-  // Clustering
-  const points = filteredLocations.map((loc) => ({
-    type: "Feature",
-    properties: { cluster: false, ...loc },
-    geometry: { type: "Point", coordinates: [loc.lng, loc.lat] },
-  }));
-  const cluster = new Supercluster({ radius: 60, maxZoom: 16 });
-  cluster.load(points);
-  const bounds = [viewport.longitude - 1, viewport.latitude - 1, viewport.longitude + 1, viewport.latitude + 1];
-  const clusters = cluster.getClusters(bounds, Math.round(viewport.zoom));
+    return { total, moving, lowBattery, activeTrails };
+  }, [locations, unitTrails]);
 
   if (!token) {
-    return <AuthForm onAuth={(t, r) => { setToken(t); setRole(r); }} />;
-  }
-
-  // Show 2FA setup if not enabled
-  if (show2FA) {
-    return <TwoFactorSetup token={token} />;
-  }
-
-  return (
-    <>
-      <NotificationCenter />
-      <AuthHeader />
-      <main className="w-full max-w-6xl flex flex-col items-center justify-start gap-6 px-2 sm:px-8 py-8">
-        <h1 className="tm-heading text-3xl md:text-4xl font-bold mb-2 text-[--tm-accent-blue]" style={{fontFamily: 'Sora, Inter, sans-serif'}}>Trackme Dashboard</h1>
-        <p className="mb-4 text-[--tm-text-secondary]">Search and view tracked phone numbers on the map in real time.</p>
-        <div className="flex flex-col md:flex-row w-full gap-6">
-          <div className="flex-1 flex flex-col gap-6">
-            {/* Incident Creation */}
-            <CreateIncident onCreated={setIncident} />
-            {/* Map and tracked devices */}
-            <div className="tm-card p-4">
-              <input
-                type="text"
-                placeholder="Search phone number..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="mb-4 p-2 rounded w-full bg-[--tm-bg-secondary] border border-[--tm-border] text-[--tm-text-main] focus:outline-none focus:ring-2 focus:ring-[--tm-accent-blue]"
-              />
-              <div className="w-full h-96 rounded-2xl overflow-hidden border border-[--tm-border] shadow-lg relative">
-                <div className="absolute z-10 left-4 top-4 flex gap-2">
-                  <button
-                    className={`px-3 py-1 rounded bg-blue-700 text-white text-xs font-semibold shadow ${drawMode ? 'opacity-80' : ''}`}
-                    onClick={() => setDrawMode(drawMode ? null : new DrawPolygonMode())}
-                  >{drawMode ? 'Cancel Draw' : 'Draw Geofence'}</button>
-                  {drawMode && (
-                    <button
-                      className="px-3 py-1 rounded bg-green-600 text-white text-xs font-semibold shadow"
-                      onClick={saveGeofence}
-                    >Save Geofence</button>
-                  )}
+    return (
+      <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.22),_transparent_35%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#111827_100%)] text-slate-100">
+        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 lg:px-8">
+          <AuthHeader />
+          <div className="flex flex-1 items-center">
+            <div className="grid w-full gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+              <section className="space-y-6">
+                <div className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm text-cyan-100">
+                  Live operations platform
                 </div>
-                <Map
-                  ref={mapRef}
-                  mapboxAccessToken={MAPBOX_TOKEN}
-                  initialViewState={viewport}
-                  mapStyle="mapbox://styles/mapbox/dark-v11"
-                  style={{ width: "100%", height: "100%", borderRadius: "1rem" }}
-                  onMove={evt => setViewport(evt.viewState)}
-                >
-                  <NavigationControl position="top-left" />
-                  {/* Heatmap Layer for device activity */}
-                  <Source
-                    id="heatmap"
-                    type="geojson"
-                    data={{
-                      type: "FeatureCollection",
-                      features: filteredLocations.map((loc) => ({
-                        type: "Feature",
-                        properties: {},
-                        geometry: { type: "Point", coordinates: [loc.lng, loc.lat] },
-                      })),
-                    }}
-                  >
-                    <Layer
-                      id="heatmap-layer"
-                      type="heatmap"
-                      paint={{
-                        "heatmap-weight": 1,
-                        "heatmap-intensity": 1,
-                        "heatmap-radius": 30,
-                        "heatmap-opacity": 0.5,
-                        "heatmap-color": [
-                          "interpolate",
-                          ["linear"],
-                          ["heatmap-density"],
-                          0, "rgba(0,0,255,0)",
-                          0.2, "#00bfff",
-                          0.4, "#3b82f6",
-                          0.6, "#f59e42",
-                          0.8, "#ef4444",
-                          1, "#b91c1c"
-                        ],
-                      }}
-                    />
-                  </Source>
-                  {/* Clusters and Markers */}
-                  {clusters.map((feature, idx) => {
-                    const [lng, lat] = feature.geometry.coordinates;
-                    if (feature.properties.cluster) {
-                      return (
-                        <Marker key={"cluster-" + idx} longitude={lng} latitude={lat} anchor="center">
-                          <div
-                            className="bg-blue-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-blue-300 shadow-lg cursor-pointer"
-                            onClick={() => {
-                              // Zoom in on cluster click
-                              if (mapRef.current) {
-                                mapRef.current.flyTo({ center: [lng, lat], zoom: Math.min(viewport.zoom + 2, 18), duration: 1200 });
-                              }
-                            }}
-                          >
-                            {feature.properties.point_count_abbreviated}
-                          </div>
-                        </Marker>
-                      );
-                    }
-                    return (
-                      <Marker key={feature.properties.deviceId + idx} longitude={lng} latitude={lat} anchor="center">
-                        <div
-                          className={`relative cursor-pointer ${selectedUnit && selectedUnit.deviceId === feature.properties.deviceId ? 'ring-2 ring-blue-400' : ''}`}
-                          onClick={() => {
-                            setSelectedUnit(feature.properties);
-                            if (mapRef.current) {
-                              mapRef.current.flyTo({ center: [lng, lat], zoom: Math.max(viewport.zoom, 14), duration: 1200 });
-                            }
-                          }}
-                        >
-                          <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[--tm-border]">
-                            <div><b>Device:</b> {feature.properties.deviceId}</div>
-                            <div><b>Lat:</b> {lat}</div>
-                            <div><b>Lng:</b> {lng}</div>
-                            <div><b>Speed:</b> {feature.properties.speed ?? "-"} km/h</div>
-                            <div><b>Heading:</b> {feature.properties.heading ?? "-"}°</div>
-                            <div><b>Battery:</b> {feature.properties.battery ?? "-"}%</div>
-                            <div><b>Time:</b> {feature.properties.timestamp ? new Date(feature.properties.timestamp * 1000).toLocaleString() : "-"}</div>
-                          </div>
-                        </div>
-                      </Marker>
-                    );
-                  })}
-                  {/* Animated Trails */}
-                  {Object.entries(unitTrails).map(([id, trail]) => (
-                    <Source key={id} type="geojson" data={{
-                      type: "Feature",
-                      geometry: { type: "LineString", coordinates: trail },
-                    }}>
-                      <Layer
-                        id={`trail-${id}`}
-                        type="line"
-                        paint={{ "line-color": "#3B82F6", "line-width": 3, "line-opacity": 0.7 }}
-                      />
-                    </Source>
-                  ))}
-                  {/* Incident Marker */}
-                  {incident && incident.location && Array.isArray(incident.location) && incident.location.length === 2 && (
-                    <Marker longitude={incident.location[1]} latitude={incident.location[0]} anchor="center">
-                      <div className="bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-red-300 shadow-lg">
-                        !
-                      </div>
-                      <div className="bg-zinc-900/90 text-xs rounded px-2 py-1 mt-2 shadow-lg border border-[--tm-border]">
-                        <div><b>Incident:</b> {incident.type}</div>
-                        <div><b>Status:</b> {incident.status}</div>
-                        <div><b>ID:</b> {incident.id}</div>
-                      </div>
-                    </Marker>
-                  )}
-                  {/* Geofence Polygons */}
-                  {geofences.map((geo, idx) => (
-                    <Source
-                      key={geo.id}
-                      type="geojson"
-                      data={{
-                        type: "Feature",
-                        geometry: {
-                          type: "Polygon",
-                          coordinates: [geo.coordinates],
-                        },
-                      }}
-                    >
-                      <Layer
-                        id={`geofence-${geo.id}`}
-                        type="fill"
-                        paint={{ "fill-color": geo.status === "Active" ? "#22d3ee" : "#64748b", "fill-opacity": 0.2 }}
-                      />
-                      <Layer
-                        id={`geofence-outline-${geo.id}`}
-                        type="line"
-                        paint={{ "line-color": geo.status === "Active" ? "#22d3ee" : "#64748b", "line-width": 2 }}
-                      />
-                    </Source>
-                  ))}
-                  {/* Geofence Drawing Editor */}
-                  <Editor
-                    mode={drawMode}
-                    features={editorFeatures}
-                    onUpdate={onEditorUpdate}
-                    editHandleShape="circle"
-                    featureShape="polygon"
-                  />
-                </Map>
-              </div>
-            </div>
-            <div className="tm-card p-4">
-              <h2 className="tm-heading text-xl font-semibold mb-2">Tracked Devices (Live)</h2>
-              <table className="w-full table-auto border-collapse text-[--tm-text-main]">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">Device ID</th>
-                    <th className="border px-2 py-1">Latitude</th>
-                    <th className="border px-2 py-1">Longitude</th>
-                    <th className="border px-2 py-1">Speed</th>
-                    <th className="border px-2 py-1">Heading</th>
-                    <th className="border px-2 py-1">Battery</th>
-                    <th className="border px-2 py-1">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLocations.map((loc, idx) => (
-                    <tr
-                      key={loc.deviceId + idx}
-                      className={selectedUnit && selectedUnit.deviceId === loc.deviceId ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
-                      onClick={() => {
-                        setSelectedUnit(loc);
-                        if (mapRef.current) {
-                          mapRef.current.flyTo({ center: [loc.lng, loc.lat], zoom: Math.max(viewport.zoom, 14), duration: 1200 });
-                        }
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td className="border px-2 py-1">{loc.deviceId}</td>
-                      <td className="border px-2 py-1">{loc.lat}</td>
-                      <td className="border px-2 py-1">{loc.lng}</td>
-                      <td className="border px-2 py-1">{loc.speed ?? "-"}</td>
-                      <td className="border px-2 py-1">{loc.heading ?? "-"}</td>
-                      <td className="border px-2 py-1">{loc.battery ?? "-"}</td>
-                      <td className="border px-2 py-1">{loc.timestamp ? new Date(loc.timestamp * 1000).toLocaleString() : "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Activity Log for all users */}
-            <ActivityLog token={token} />
-            {/* User Management for super_admin only */}
-            {role === "super_admin" && <UserManagement token={token} />}
-          </div>
-          <div className="flex-1 flex flex-col gap-6 min-w-[320px] max-w-md">
-            {/* Right Intelligence Panel */}
-            {selectedUnit && (
-              <RightIntelligencePanel selectedUnit={selectedUnit} onClose={() => setSelectedUnit(null)} />
-            )}
-            <div className="tm-card p-4 mb-4">
-              <RegisterDevice />
-            </div>
-            <div className="tm-card p-4 mb-4">
-              <DeviceList />
-            </div>
-            <div className="tm-card p-4 mb-4">
-              <SharedDevices />
-            </div>
-            <div className="tm-card p-4 mb-4">
-              <MobileClientSimulator />
+                <div className="space-y-4">
+                  <h1 className="max-w-2xl text-4xl font-black tracking-tight text-white md:text-6xl">
+                    TrackMe is a real-time operations workspace for users, devices, incidents, and intelligence.
+                  </h1>
+                  <p className="max-w-2xl text-base leading-7 text-slate-300 md:text-lg">
+                    Sign in to access live location tracking, activity logging, incident handling, geofence monitoring, and role-based dashboards built for actual deployment.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <StatCard label="Live coverage" value="24/7" helper="Socket-driven updates" />
+                  <StatCard label="Audit trail" value="Full" helper="Every action logged" />
+                  <StatCard label="Responsive" value="All devices" helper="Mobile, tablet, desktop" />
+                </div>
+              </section>
+              <section className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.72)] p-4 shadow-2xl shadow-cyan-950/30 backdrop-blur-md md:p-6">
+                <AuthForm onAuth={(nextToken, nextRole) => {
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem("tm_auth_token", nextToken);
+                    window.localStorage.setItem("tm_auth_role", nextRole);
+                    window.dispatchEvent(new Event("tm-auth-changed"));
+                  }
+                  setToken(nextToken);
+                  setRole(nextRole);
+                }} />
+              </section>
             </div>
           </div>
         </div>
       </main>
-    </>
-  );
+    );
+  }
+
+  if (role === "super_admin") return <SuperAdminDashboard token={token} />;
+  if (role === "control_room") return <ControlRoomDashboard />;
+  if (role === "dispatcher") return <DispatcherDashboard />;
+  if (role === "patrol_officer") return <PatrolOfficerDashboard deviceId={locations[0]?.deviceId || ""} />;
+  if (role === "analyst") return <AnalystDashboard />;
+  if (role === "field_agent") return <FieldAgentDashboard deviceId={locations[0]?.deviceId || ""} />;
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_28%),linear-gradient(180deg,#020617_0%,#0f172a_42%,#111827_100%)] text-slate-100">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-5 lg:px-8">
+        <header className="flex flex-col gap-4 rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4 shadow-lg shadow-cyan-950/20 backdrop-blur-md lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <AuthHeader />
+            <p className="mt-2 max-w-2xl text-sm text-[var(--tm-text-secondary)]">
+              Live operations dashboard. Real users, real activity, real-time incident awareness.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <NotificationCenter />
+            <button
+              className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.localStorage.removeItem("tm_auth_token");
+                  window.localStorage.removeItem("tm_auth_role");
+                  window.dispatchEvent(new Event("tm-auth-changed"));
+                }
+                setToken(null);
+                setRole(null);
+                setSelectedUnit(null);
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Tracked units" value={String(summary.total)} helper="Devices reporting location" />
+          <StatCard label="Moving now" value={String(summary.moving)} helper="Units currently active" />
+          <StatCard label="Low battery" value={String(summary.lowBattery)} helper="Need attention soon" />
+          <StatCard label="Route histories" value={String(summary.activeTrails)} helper="Trail streams retained" />
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.9fr)]">
+          <div className="space-y-6">
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4 shadow-xl backdrop-blur-md md:p-6">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-[var(--tm-text-main)]">Live location map</h2>
+                  <p className="text-sm text-[var(--tm-text-secondary)]">Real-time device positions and movement trails.</p>
+                </div>
+              </div>
+              <div style={{ height: "500px" }}>
+                <Map locations={locations} selectedUnit={selectedUnit} trails={unitTrails} />
+              </div>
+            </div>
+
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4 shadow-xl backdrop-blur-md md:p-6">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-[var(--tm-text-main)]">Live device feed</h2>
+                  <p className="text-sm text-[var(--tm-text-secondary)]">Search, select, and inspect currently active users and devices.</p>
+                </div>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search device ID"
+                  className="w-full rounded-xl border border-[var(--tm-border)] bg-slate-950/70 px-4 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 md:w-72"
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] table-auto border-collapse text-sm text-[--tm-text-main]">
+                  <thead>
+                    <tr className="text-left text-[var(--tm-text-secondary)]">
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Device ID</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Latitude</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Longitude</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Speed</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Heading</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Battery</th>
+                      <th className="border-b border-[var(--tm-border)] px-3 py-2">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLocations.map((location, index) => (
+                      <tr
+                        key={`${location.deviceId}-${index}`}
+                        className={`cursor-pointer border-b border-[var(--tm-border)] transition hover:bg-cyan-400/10 ${selectedUnit?.deviceId === location.deviceId ? "bg-cyan-400/10" : ""}`}
+                        onClick={() => setSelectedUnit(location)}
+                      >
+                        <td className="px-3 py-2 font-semibold">{location.deviceId}</td>
+                        <td className="px-3 py-2">{location.lat}</td>
+                        <td className="px-3 py-2">{location.lng}</td>
+                        <td className="px-3 py-2">{location.speed ?? "-"}</td>
+                        <td className="px-3 py-2">{location.heading ?? "-"}</td>
+                        <td className="px-3 py-2">{location.battery ?? "-"}</td>
+                        <td className="px-3 py-2">{location.timestamp ? new Date(location.timestamp * 1000).toLocaleString() : "-"}</td>
+                      </tr>
+                    ))}
+                    {filteredLocations.length === 0 && (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-[var(--tm-text-secondary)]" colSpan={7}>
+                          No live devices match your search.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <GeofencePanel />
+              <IncidentPanel />
+            </div>
+
+            <ActivityLog token={token} />
+
+            {role === "super_admin" && <UserManagement token={token} />}
+          </div>
+
+          <aside className="space-y-4">
+            {selectedUnit ? (
+              <RightIntelligencePanel selectedUnit={selectedUnit} onClose={() => setSelectedUnit(null)} />
+            ) : (
+              <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4 text-sm text-[var(--tm-text-secondary)]">
+                Select a unit to open its live intelligence panel.
+              </div>
+            )}
+
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4">
+              <RegisterDevice />
+            </div>
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4">
+              <DeviceList />
+            </div>
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4">
+              <SharedDevices />
+            </div>
+            <div className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.7)] p-4">
+              <MobileClientSimulator />
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
   );
 }

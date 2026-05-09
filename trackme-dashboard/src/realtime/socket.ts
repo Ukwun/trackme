@@ -4,7 +4,14 @@ let socket: ReturnType<typeof io> | null = null;
 
 export function connectSocket() {
   if (!socket) {
-    socket = io("/api/socketio");
+    // Ensure the API route has initialized the Socket.IO server before connecting.
+    if (typeof window !== "undefined") {
+      void fetch("/api/socketio").catch(() => undefined);
+    }
+    socket = io({
+      path: "/api/socketio",
+      transports: ["websocket", "polling"],
+    });
   }
   return socket;
 }

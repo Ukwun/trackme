@@ -5,7 +5,6 @@ export default function AuthForm({ onAuth }: { onAuth: (token: string, role: str
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("field_agent");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -13,20 +12,37 @@ export default function AuthForm({ onAuth }: { onAuth: (token: string, role: str
     e.preventDefault();
     setLoading(true);
     setError("");
-    const res = await fetch("/api/auth", {
+    const res = await fetch('/api/auth', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: mode,
         email,
         password,
-        role: mode === "register" ? role : undefined,
       }),
     });
-    const data = await res.json();
+    let data: Record<string, unknown> = {};
+    const raw = await res.text();
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = { error: raw };
+      }
+    }
     setLoading(false);
-    if (!res.ok) return setError(data.error || "Unknown error");
-    if (mode === "login") onAuth(data.token, data.role);
+    if (!res.ok) {
+      const message = typeof data.error === "string" ? data.error : "Unknown error";
+      return setError(message);
+    }
+    if (mode === "login") {
+      const token = typeof data.token === "string" ? data.token : "";
+      const authRole = typeof data.role === "string" ? data.role : "field_agent";
+      if (!token) {
+        return setError("Login succeeded but token was missing");
+      }
+      onAuth(token, authRole);
+    }
     else setMode("login");
   }
 
@@ -36,16 +52,7 @@ export default function AuthForm({ onAuth }: { onAuth: (token: string, role: str
         <h2 className="text-xl font-bold mb-2 text-center">{mode === "login" ? "Sign In" : "Register"}</h2>
         <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="p-2 rounded border" />
         <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="p-2 rounded border" />
-        {mode === "register" && (
-          <select value={role} onChange={e => setRole(e.target.value)} className="p-2 rounded border">
-            <option value="super_admin">Super Admin</option>
-            <option value="control_room">Control Room Operator</option>
-            <option value="dispatcher">Dispatcher</option>
-            <option value="patrol_officer">Patrol Officer</option>
-            <option value="analyst">Analyst</option>
-            <option value="field_agent">Field Agent</option>
-          </select>
-        )}
+        {mode === "register" && <div className="rounded border border-cyan-400/20 bg-cyan-950/20 px-3 py-2 text-xs text-slate-300">New self-serve accounts start as field agents. Elevated roles are assigned by administrators.</div>}
         {error && <div className="text-red-500 text-sm">{error}</div>}
         <button type="submit" className="bg-blue-700 text-white rounded p-2 font-semibold" disabled={loading}>{loading ? "Please wait..." : mode === "login" ? "Sign In" : "Register"}</button>
         <button type="button" className="text-xs underline mt-2" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "Create an account" : "Already have an account? Sign in"}</button>

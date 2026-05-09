@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { sendLocationUpdateWithGeofence } from "../realtime/socket";
 
+function MobileClientSimulator() {
   const [deviceId, setDeviceId] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
@@ -154,3 +155,5 @@ import { sendLocationUpdateWithGeofence } from "../realtime/socket";
     </form>
   );
 }
+
+export default MobileClientSimulator;

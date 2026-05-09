@@ -1,18 +1,44 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { UnauthorizedState } from "./ui/OperationalState";
+import { getClientSession } from "../lib/clientAuth";
+
+const ALLOWED_ROLES = ["super_admin", "control_room", "dispatcher"];
 
 export default function RegisterDevice() {
   const [phone, setPhone] = useState("");
   const [imei, setImei] = useState("");
   const [name, setName] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [session, setSession] = useState(() => getClientSession());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sync = () => setSession(getClientSession());
+    sync();
+    window.addEventListener("tm-auth-changed", sync);
+    return () => window.removeEventListener("tm-auth-changed", sync);
+  }, []);
+
+  const role = String(session.role || "");
+
+  if (!ALLOWED_ROLES.includes(role)) {
+    return <UnauthorizedState detail="Device registration is limited to command-and-control roles." />;
+  }
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
+    if (!session.token) {
+      setStatus("Authentication required");
+      return;
+    }
     const res = await fetch("/api/devices", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
       body: JSON.stringify({ phone, imei, name }),
     });
     const data = await res.json();

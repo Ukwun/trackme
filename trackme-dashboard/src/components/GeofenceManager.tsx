@@ -2,9 +2,13 @@
 import { useState, useEffect } from "react";
 
 async function sendNotification(message: string, type: string = "info") {
+  const token = typeof window !== "undefined" ? window.localStorage.getItem("tm_auth_token") : null;
   await fetch("/api/notifications", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ message, type }),
   });
 }
@@ -17,7 +21,10 @@ export default function GeofenceManager() {
   const [radius, setRadius] = useState(1000);
   useEffect(() => {
     async function fetchGeofences() {
-      const res = await fetch("/api/geofences");
+      const token = typeof window !== "undefined" ? window.localStorage.getItem("tm_auth_token") : null;
+      const res = await fetch("/api/geofences", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       const data = await res.json();
       setGeofences(data.geofences || []);
     }
@@ -25,16 +32,22 @@ export default function GeofenceManager() {
   }, []);
   async function handleAdd(e: any) {
     e.preventDefault();
+    const token = typeof window !== "undefined" ? window.localStorage.getItem("tm_auth_token") : null;
     await fetch("/api/geofences", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ name, center, radius }),
     });
     await sendNotification(`Geofence '${name}' created at [${center.join(", ")}] (radius: ${radius}m)`, "info");
     setName("");
     setRadius(1000);
     // Refresh
-    const res = await fetch("/api/geofences");
+    const res = await fetch("/api/geofences", {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
     const data = await res.json();
     setGeofences(data.geofences || []);
   }

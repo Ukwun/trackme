@@ -1,5 +1,5 @@
 // Simple in-memory rate limiter (replace with Redis for production)
-const RATE_LIMITS = {};
+const RATE_LIMITS: Record<string, { count: number; start: number }> = {};
 const WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 30;
 

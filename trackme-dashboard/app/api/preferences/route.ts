@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getDb } from "../../../src/api/db";
+import { resolveSession } from "../../../src/api/authSession";
 
-export async function GET() {
-  const { userId } = auth();
+export async function GET(req: Request) {
+  const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = await getDb();
   const pref = await db.collection("preferences").findOne({ userId });
@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { userId } = auth();
+  const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const db = await getDb();

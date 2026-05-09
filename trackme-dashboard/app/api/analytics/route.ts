@@ -1,34 +1,31 @@
 
 
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getDb } from "../../../src/api/db";
 import { logActivity } from "../../../src/api/logActivity";
 import { hasPermission } from "../../../src/api/permissions";
 import { rateLimit } from "../../../src/api/rateLimit";
+import { resolveSession } from "../../../src/api/authSession";
+import { emitRealtimeEvent } from "../../../src/realtime/server";
 
 export async function POST(req: Request) {
-  const { userId, sessionClaims } = auth();
-  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPermission({ role: sessionClaims.role }, "analytics:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { userId, role } = await resolveSession(req);
+  if (!userId || !role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role }, "analytics:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!rateLimit(userId+":analytics:post")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const body = await req.json();
   const db = await getDb();
-  await db.collection("analytics").insertOne({ userId, ...body, createdAt: new Date().toISOString() });
+  const analyticsRecord = { userId, ...body, createdAt: new Date().toISOString() };
+  await db.collection("analytics").insertOne(analyticsRecord);
   await logActivity({ userId, action: "analytics:create", meta: body });
-  // Emit real-time event
-  try {
-    if ((global as any).io) {
-      (global as any).io.emit('analytics-update', { userId });
-    }
-  } catch {}
+  emitRealtimeEvent("analytics-update", { userId, analytics: analyticsRecord });
   return NextResponse.json({ success: true });
 }
 
 export async function GET(req: Request) {
-  const { userId, sessionClaims } = auth();
-  if (!userId || !sessionClaims?.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPermission({ role: sessionClaims.role }, "analytics:view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { userId, role } = await resolveSession(req);
+  if (!userId || !role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission({ role }, "analytics:view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!rateLimit(userId+":analytics:get")) return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   const db = await getDb();
   const url = req?.url || "";
@@ -66,6 +63,5 @@ export async function GET(req: Request) {
   // Default: return all analytics
   const analytics = await db.collection("analytics").find({ userId }).sort({ createdAt: -1 }).toArray();
   await logActivity({ userId, action: "analytics:list", meta: {} });
-  return NextResponse.json({ analytics });
   return NextResponse.json({ analytics });
 }

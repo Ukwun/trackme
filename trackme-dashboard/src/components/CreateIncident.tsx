@@ -20,9 +20,13 @@ export default function CreateIncident({ onCreated }: { onCreated?: (incident: a
     setLoading(true);
     setError("");
     try {
+      const token = typeof window !== "undefined" ? window.localStorage.getItem("tm_auth_token") : null;
       const res = await fetch("/api/incidents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ type, location })
       });
       const data = await res.json();

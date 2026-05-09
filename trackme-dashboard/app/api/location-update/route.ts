@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { checkGeofenceEvents } from "../geofences/events";
 import { getDb } from "../../../src/api/db";
+import { logActivity } from "../../../src/api/logActivity";
+import { emitRealtimeEvent } from "../../../src/realtime/server";
 
 // POST /api/location-update { deviceId, lat, lng }
 export async function POST(req: Request) {
@@ -10,25 +12,26 @@ export async function POST(req: Request) {
   }
   // Save location
   const db = await getDb();
-  await db.collection("location_history").insertOne({ deviceId, lat, lng, timestamp: Date.now() });
+  const locationRecord = { deviceId, lat, lng, timestamp: Date.now() };
+  await db.collection("location_history").insertOne(locationRecord);
+  emitRealtimeEvent("location-update", locationRecord);
 
   // Geofence event detection
   const events = await checkGeofenceEvents(deviceId, [lat, lng]);
   for (const evt of events) {
-    // Log event
-    await db.collection("activity_log").insertOne({
+    await logActivity({
+      action: `geofence:${evt.type}`,
+      meta: {
+        deviceId,
+        geofence: evt.geofence.name,
+      },
+    });
+    emitRealtimeEvent("geofence-update", {
       deviceId,
-      event: evt.type,
+      type: evt.type,
       geofence: evt.geofence.name,
-      time: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
     });
-    // Push notification
-    await fetch("/api/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: `Device ${deviceId} entered geofence '${evt.geofence.name}'`, type: "warning" })
-    });
-    // TODO: Sound alert (client-side)
   }
   return NextResponse.json({ success: true, events });
 }

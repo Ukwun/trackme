@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { setupRealtime } from '../realtime';
 import AnalyticsCharts from "./AnalyticsCharts";
+import { EmptyState, LoadingState, OperationalState, UnauthorizedState } from "./ui/OperationalState";
+import { getClientSession } from "../lib/clientAuth";
 
 type AnalyticsMode = "all" | "trends" | "anomalies";
 
@@ -11,24 +13,69 @@ export default function AnalyticsPanel() {
   const [trends, setTrends] = useState<any[]>([]);
   const [anomalies, setAnomalies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<number>(0); // index for playback
+  const [session, setSession] = useState(() => getClientSession());
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncAuth = () => {
+      setSession(getClientSession());
+    };
+    syncAuth();
+    window.addEventListener("tm-auth-changed", syncAuth);
+    return () => window.removeEventListener("tm-auth-changed", syncAuth);
+  }, []);
+
+  const canViewAnalytics = session.role === "super_admin" || session.role === "control_room" || session.role === "analyst";
+
+  useEffect(() => {
+    if (!session.token) {
+      setAnalytics([]);
+      setTrends([]);
+      setAnomalies([]);
+      setError(null);
+      return;
+    }
+
+    if (!canViewAnalytics) {
+      setAnalytics([]);
+      setTrends([]);
+      setAnomalies([]);
+      setError(null);
+      return;
+    }
+
     let unsub = () => {};
     async function fetchData() {
       setLoading(true);
-      if (mode === "all") {
-        const res = await fetch("/api/analytics");
-        const data = await res.json();
-        setAnalytics(data.analytics || []);
-      } else if (mode === "trends") {
-        const res = await fetch("/api/analytics?mode=trends");
-        const data = await res.json();
-        setTrends(data.trends || []);
-      } else if (mode === "anomalies") {
-        const res = await fetch("/api/analytics?mode=anomalies");
-        const data = await res.json();
-        setAnomalies(data.anomalies || []);
+      setError(null);
+      const headers = { Authorization: `Bearer ${session.token}` };
+      try {
+        if (mode === "all") {
+          const res = await fetch("/api/analytics", { headers });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Analytics stream unavailable");
+          }
+          setAnalytics(data.analytics || []);
+        } else if (mode === "trends") {
+          const res = await fetch("/api/analytics?mode=trends", { headers });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Trend data unavailable");
+          }
+          setTrends(data.trends || []);
+        } else if (mode === "anomalies") {
+          const res = await fetch("/api/analytics?mode=anomalies", { headers });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Anomaly data unavailable");
+          }
+          setAnomalies(data.anomalies || []);
+        }
+      } catch (e: any) {
+        setError(e.message || "Failed to load analytics");
       }
       setLoading(false);
     }
@@ -45,7 +92,7 @@ export default function AnalyticsPanel() {
       clearInterval(interval);
       unsub();
     };
-  }, [mode]);
+  }, [mode, session.token, canViewAnalytics]);
 
   // Timeline slider for playback (only for 'all' mode)
   const playbackEvents = analytics.slice().reverse();
@@ -59,7 +106,10 @@ export default function AnalyticsPanel() {
         <button className={`px-2 py-1 rounded ${mode === "trends" ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-200"}`} onClick={() => setMode("trends")}>Trends</button>
         <button className={`px-2 py-1 rounded ${mode === "anomalies" ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-200"}`} onClick={() => setMode("anomalies")}>Anomalies</button>
       </div>
-      {loading && <div className="text-xs text-[var(--tm-text-secondary)]">Loading...</div>}
+      {!session.token ? <UnauthorizedState detail="Authenticate to access analytics streams." /> : null}
+      {session.token && !canViewAnalytics ? <UnauthorizedState detail="Analytics is not enabled for your current role." /> : null}
+      {loading ? <LoadingState title="Pulling analytics telemetry..." /> : null}
+      {!loading && error ? <OperationalState title="Analytics feed unavailable" detail={error} tone="danger" /> : null}
       {mode === "all" && analytics.length > 0 && (
         <>
           <div className="mb-2">
@@ -73,17 +123,17 @@ export default function AnalyticsPanel() {
               className="w-full"
             />
             {currentEvent && (
-              <div className="mt-2 p-2 rounded bg-zinc-900 border border-[var(--tm-border)]">
+              <div className="mt-2 p-2 rounded bg-zinc-900 border border-(--tm-border)">
                 <div className="font-semibold text-xs">{currentEvent.type || 'Event'}</div>
                 <div className="text-xs">{currentEvent.message || JSON.stringify(currentEvent)}</div>
-                <div className="text-xs text-[var(--tm-text-secondary)]">{currentEvent.createdAt}</div>
+                <div className="text-xs text-(--tm-text-secondary)">{currentEvent.createdAt}</div>
               </div>
             )}
           </div>
           <ul className="text-xs max-h-40 overflow-y-auto">
             {playbackEvents.map((a, idx) => (
               <li key={idx} className={idx === timeline ? "mb-1 font-bold text-blue-400" : "mb-1"}>
-                <span className="font-semibold">{a.type || 'Event'}:</span> {a.message || JSON.stringify(a)} <span className="text-[var(--tm-text-secondary)]">({a.createdAt})</span>
+                <span className="font-semibold">{a.type || 'Event'}:</span> {a.message || JSON.stringify(a)} <span className="text-(--tm-text-secondary)">({a.createdAt})</span>
               </li>
             ))}
           </ul>
@@ -109,14 +159,14 @@ export default function AnalyticsPanel() {
           </ul>
         </div>
       )}
-      {mode === "all" && analytics.length === 0 && !loading && (
-        <div className="text-[var(--tm-text-secondary)]">No analytics data yet.</div>
+      {mode === "all" && analytics.length === 0 && !loading && !error && canViewAnalytics && session.token && (
+        <EmptyState title="No analytics events yet" detail="Live telemetry appears here as activity is recorded." />
       )}
-      {mode === "trends" && trends.length === 0 && !loading && (
-        <div className="text-[var(--tm-text-secondary)]">No trend data yet.</div>
+      {mode === "trends" && trends.length === 0 && !loading && !error && canViewAnalytics && session.token && (
+        <EmptyState title="No trend data" detail="Trend analysis will populate after enough daily events are recorded." />
       )}
-      {mode === "anomalies" && anomalies.length === 0 && !loading && (
-        <div className="text-[var(--tm-text-secondary)]">No anomalies detected.</div>
+      {mode === "anomalies" && anomalies.length === 0 && !loading && !error && canViewAnalytics && session.token && (
+        <EmptyState title="No anomalies detected" detail="Anomaly detection will flag outlier days once activity patterns emerge." />
       )}
       <AnalyticsCharts />
     </div>

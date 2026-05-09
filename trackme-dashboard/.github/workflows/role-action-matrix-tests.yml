@@ -1,0 +1,203 @@
+name: Role-Action Matrix Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: UI Role-Action Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd mongosh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./trackme-dashboard
+
+      - name: Seed test database
+        run: node scripts/seed-test-data.js
+        working-directory: ./trackme-dashboard
+        env:
+          MONGO_URL: mongodb://localhost:27017/trackme
+          DATABASE_URL: mongodb://localhost:27017/trackme
+
+      - name: Build application
+        run: npm run build
+        working-directory: ./trackme-dashboard
+        env:
+          NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
+      - name: Start development server
+        run: npm run dev -- -p 3001 &
+        working-directory: ./trackme-dashboard
+        env:
+          NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+          DATABASE_URL: mongodb://localhost:27017/trackme
+          JWT_SECRET: test-secret-key-do-not-use-in-production
+
+      - name: Wait for server to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:3001 > /dev/null; then
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "Server failed to start"
+          exit 1
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+        working-directory: ./trackme-dashboard
+
+      - name: Run Playwright UI-driven matrix tests
+        run: npx playwright test tests/e2e/role-action-matrix-ui.spec.ts
+        working-directory: ./trackme-dashboard
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+
+      - name: Run Playwright API-level matrix tests
+        run: npx playwright test tests/e2e/role-action-matrix.spec.ts
+        working-directory: ./trackme-dashboard
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+
+      - name: Run Playwright smoke tests
+        run: npx playwright test tests/e2e/smoke.spec.ts
+        working-directory: ./trackme-dashboard
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+
+      - name: Cleanup test database
+        if: always()
+        run: node scripts/cleanup-test-data.js
+        working-directory: ./trackme-dashboard
+        env:
+          MONGO_URL: mongodb://localhost:27017/trackme
+          DATABASE_URL: mongodb://localhost:27017/trackme
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: playwright-report
+          path: trackme-dashboard/playwright-report/
+          retention-days: 7
+
+      - name: Comment PR with test results
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = './trackme-dashboard/playwright-report/index.html';
+            const testsPassed = !fs.existsSync(reportPath) || !fs.readFileSync(reportPath, 'utf8').includes('failed');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🎭 **Playwright Role-Action Matrix Tests**: ${testsPassed ? '✅ Passed' : '❌ Failed'}\n\n[📋 View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+            });
+
+  lint:
+    name: Lint Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./trackme-dashboard
+
+      - name: Run ESLint
+        run: npm run lint
+        working-directory: ./trackme-dashboard
+
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./trackme-dashboard
+
+      - name: Build application
+        run: npm run build
+        working-directory: ./trackme-dashboard
+        env:
+          NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+
+  production-smoke:
+    name: Production Smoke Tests
+    if: ${{ vars.NETLIFY_PRODUCTION_URL != '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./trackme-dashboard
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: ./trackme-dashboard
+
+      - name: Run production smoke tests
+        run: npx playwright test tests/e2e/smoke.spec.ts --project=chromium
+        working-directory: ./trackme-dashboard
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ vars.NETLIFY_PRODUCTION_URL }}

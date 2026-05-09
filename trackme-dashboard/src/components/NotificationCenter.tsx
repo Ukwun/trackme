@@ -1,13 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { setupRealtime } from '../realtime';
+import { getClientSession } from "../lib/clientAuth";
 
 export default function NotificationCenter() {
   const [notifications, setNotifications] = useState<any[]>([]);
   useEffect(() => {
     let unsub = () => {};
     async function fetchNotifications() {
-      const res = await fetch("/api/notifications");
+      const token = getClientSession().token;
+      const res = await fetch("/api/notifications", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        setNotifications([]);
+        return;
+      }
       const data = await res.json();
       setNotifications(data.notifications || []);
     }

@@ -1,11 +1,9 @@
-import { getDb } from "./db";
+import { writeActivityLog } from "./activity";
 
-export async function logActivity({ userId, action, meta = {} }: { userId: string, action: string, meta?: any }) {
-  const db = await getDb();
-  await db.collection("activity_log").insertOne({
-    userId,
+export async function logActivity({ userId, action, meta = {} }: { userId?: string | null, action: string, meta?: any }) {
+  await writeActivityLog({
+    userId: userId ?? null,
     action,
     meta,
-    timestamp: new Date().toISOString(),
   });
 }

@@ -1,14 +1,46 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Line, Bar, Heatmap } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
 import Chart from "chart.js/auto";
 
 export default function AnalyticsCharts() {
   const [metrics, setMetrics] = useState<any>({});
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authRole, setAuthRole] = useState<string | null>(null);
+
   useEffect(() => {
-    fetch("/api/analytics?mode=metrics").then(res => res.json()).then(setMetrics);
+    if (typeof window === "undefined") return;
+    const syncAuth = () => {
+      setAuthToken(window.localStorage.getItem("tm_auth_token"));
+      setAuthRole(window.localStorage.getItem("tm_auth_role"));
+    };
+    syncAuth();
+    window.addEventListener("tm-auth-changed", syncAuth);
+    return () => window.removeEventListener("tm-auth-changed", syncAuth);
   }, []);
 
+  const canViewAnalytics = authRole === "super_admin" || authRole === "control_room" || authRole === "analyst";
+
+  useEffect(() => {
+    if (!authToken) {
+      setMetrics({});
+      return;
+    }
+
+    if (!canViewAnalytics) {
+      setMetrics({});
+      return;
+    }
+
+    fetch("/api/analytics?mode=metrics", {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setMetrics(data || {}))
+      .catch(() => setMetrics({}));
+  }, [authToken, canViewAnalytics]);
+
+  if (!canViewAnalytics) return null;
   if (!metrics.activeUnits) return <div>Loading analytics...</div>;
 
   return (
@@ -23,7 +55,7 @@ export default function AnalyticsCharts() {
       </div>
       <div className="mb-6">
         <h3 className="font-semibold mb-2">Hotspot Analysis (Heatmap)</h3>
-        {metrics.heatmapData && <Heatmap data={metrics.heatmapData} />}
+        <div>Heatmap visualization coming soon...</div>
       </div>
       <div className="mb-6">
         <h3 className="font-semibold mb-2">Incident Timeline</h3>

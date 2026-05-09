@@ -1,45 +1,84 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { ObjectId } from "mongodb";
 import { getDb } from "../../../src/api/db";
-import { Server } from "socket.io";
-
-// Stub functions for external delivery
-async function sendSMS(message, userId) {
-  // Integrate with SMS provider here
-  return true;
-}
-async function sendPush(message, userId) {
-  // Integrate with push notification service here
-  return true;
-}
-async function sendEmail(message, userId) {
-  // Integrate with email provider here
-  return true;
-}
+import { resolveSession } from "../../../src/api/authSession";
+import { emitRealtimeEvent } from "../../../src/realtime/server";
+import { deliverNotification } from "../../../src/api/notificationDelivery";
 
 export async function POST(req: Request) {
-  const { userId } = auth();
+  const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const { message, type, delivery } = body;
   if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
   const db = await getDb();
-  await db.collection("notifications").insertOne({ userId, message, type: type || "info", createdAt: new Date().toISOString() });
-  // Emit real-time event
-  try {
-    if ((global as any).io) {
-      (global as any).io.emit('notification-update', { userId });
+  const channels = Array.isArray(delivery)
+    ? delivery.filter((channel: string) => ["sms", "push", "email"].includes(channel))
+    : [];
+  const notification = {
+    userId,
+    message,
+    type: type || "info",
+    createdAt: new Date().toISOString(),
+    deliveryStatus: channels.length > 0 ? "pending" : "in_app_only",
+    deliveries: [],
+  };
+
+  const result = await db.collection("notifications").insertOne(notification);
+  const notificationId = result.insertedId;
+
+  emitRealtimeEvent("notification-update", { userId, message, type: type || "info", notificationId });
+
+  const deliveryAttempts = channels.length > 0
+    ? await deliverNotification({ message, type: type || "info", userId, channels })
+    : [];
+
+  const failedAttempts = deliveryAttempts.filter((attempt) => !attempt.success);
+  const deliveryStatus =
+    deliveryAttempts.length === 0
+      ? "in_app_only"
+      : failedAttempts.length === 0
+        ? "delivered"
+        : failedAttempts.length === deliveryAttempts.length
+          ? "failed"
+          : "partial";
+
+  await db.collection("notifications").updateOne(
+    { _id: new ObjectId(notificationId) },
+    {
+      $set: {
+        deliveryStatus,
+        deliveries: deliveryAttempts,
+        deliveredAt: new Date().toISOString(),
+      },
     }
-  } catch {}
-  // External delivery
-  if (delivery?.includes("sms")) await sendSMS(message, userId);
-  if (delivery?.includes("push")) await sendPush(message, userId);
-  if (delivery?.includes("email")) await sendEmail(message, userId);
-  return NextResponse.json({ success: true });
+  );
+
+  if (failedAttempts.length > 0) {
+    await db.collection("notification_dead_letters").insertMany(
+      failedAttempts.map((attempt) => ({
+        notificationId,
+        userId,
+        channel: attempt.channel,
+        message,
+        type: type || "info",
+        attempts: attempt.attempts,
+        detail: attempt.detail,
+        createdAt: new Date().toISOString(),
+      }))
+    );
+  }
+
+  return NextResponse.json({
+    success: deliveryStatus !== "failed",
+    notificationId,
+    deliveryStatus,
+    deliveries: deliveryAttempts,
+  });
 }
 
-export async function GET() {
-  const { userId } = auth();
+export async function GET(req: Request) {
+  const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = await getDb();
   const notifications = await db.collection("notifications").find({ userId }).sort({ createdAt: -1 }).toArray();

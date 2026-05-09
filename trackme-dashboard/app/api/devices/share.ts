@@ -4,7 +4,7 @@ import { getDb } from "../../../src/api/db";
 
 // POST: Share a device with another user
 export async function POST(req: Request) {
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
 // GET: List devices shared with the current user
 export async function GET() {
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

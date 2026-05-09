@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
 import UnitList from "./UnitList";
@@ -10,6 +10,33 @@ import AnalyticsPanel from "./AnalyticsPanel";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncAuthState = () => {
+      setIsAuthenticated(Boolean(window.localStorage.getItem("tm_auth_token")));
+    };
+
+    syncAuthState();
+    window.addEventListener("tm-auth-changed", syncAuthState);
+    return () => window.removeEventListener("tm-auth-changed", syncAuthState);
+  }, []);
+
+  if (isAuthenticated) {
+    return (
+      <>
+        <ThemeToggle />
+        <ErrorBoundary>
+          <div className="min-h-screen w-full bg-[var(--tm-bg-secondary)]">
+            {children}
+          </div>
+        </ErrorBoundary>
+      </>
+    );
+  }
+
   return (
     <>
       <button
@@ -33,7 +60,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="mt-auto pt-8 text-xs text-[var(--tm-text-secondary)] opacity-70">© 2026 Trackme</div>
           </aside>
           {/* Main Map/Content */}
-          <main className="flex-1 flex flex-col items-center justify-start px-0 sm:px-8 py-8 md:ml-[300px] max-w-[calc(100vw-600px)]">
+          <main className="flex-1 flex flex-col items-center justify-start px-0 sm:px-8 py-8 md:ml-[300px] w-full max-w-none">
             {children}
           </main>
           {/* Right Intelligence Panel */}
