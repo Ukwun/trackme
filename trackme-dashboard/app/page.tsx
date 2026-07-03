@@ -21,6 +21,7 @@ import AnalystDashboard from "../src/components/dashboards/AnalystDashboard";
 import FieldAgentDashboard from "../src/components/dashboards/FieldAgentDashboard";
 import Map from "../src/components/Map";
 import { connectSocket } from "../src/realtime/socket";
+import { getClientSession } from "../src/lib/clientAuth";
 
 function StatCard({ label, value, helper }: { label: string; value: string; helper: string }) {
   return (
@@ -44,10 +45,9 @@ export default function DashboardPage() {
     if (typeof window === "undefined") return;
 
     const syncAuthState = () => {
-      const savedToken = window.localStorage.getItem("tm_auth_token");
-      const savedRole = window.localStorage.getItem("tm_auth_role");
-      setToken(savedToken);
-      setRole(savedRole);
+      const session = getClientSession();
+      setToken(session.token);
+      setRole(session.role);
     };
 
     syncAuthState();
@@ -77,10 +77,37 @@ export default function DashboardPage() {
     socket.on("geofence-update", () => undefined);
     socket.on("incident-update", () => undefined);
 
+    const pollInterval = setInterval(async () => {
+      try {
+        const authToken = window.localStorage.getItem("tm_auth_token");
+        const response = await fetch("/api/locations?limit=40", {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+        if (!response.ok) return;
+        const rows = await response.json();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        const latestByDevice = new globalThis.Map<string, any>();
+        for (const row of rows) {
+          if (!row?.deviceId) continue;
+          if (!latestByDevice.has(row.deviceId)) {
+            latestByDevice.set(row.deviceId, row);
+          }
+        }
+
+        for (const row of latestByDevice.values()) {
+          handleLocationUpdate(row);
+        }
+      } catch {
+        // Ignore polling failures; socket stream remains primary.
+      }
+    }, 2500);
+
     return () => {
       socket.off("location-update", handleLocationUpdate);
       socket.off("geofence-update");
       socket.off("incident-update");
+      clearInterval(pollInterval);
     };
   }, []);
 
@@ -143,8 +170,9 @@ export default function DashboardPage() {
   }
 
   if (role === "super_admin") return <SuperAdminDashboard token={token} />;
-  if (role === "control_room") return <ControlRoomDashboard />;
+  if (role === "control_room" || role === "control_room_commander") return <ControlRoomDashboard />;
   if (role === "dispatcher") return <DispatcherDashboard />;
+  if (role === "field_supervisor") return <DispatcherDashboard />;
   if (role === "patrol_officer") return <PatrolOfficerDashboard deviceId={locations[0]?.deviceId || ""} />;
   if (role === "analyst") return <AnalystDashboard />;
   if (role === "field_agent") return <FieldAgentDashboard deviceId={locations[0]?.deviceId || ""} />;

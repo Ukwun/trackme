@@ -6,6 +6,7 @@ import Map from "../Map";
 import RoleSidebar from "./RoleSidebar";
 import { roleIcons, widgetIcons } from "../RoleIcons";
 import { connectSocket } from "../../realtime/socket";
+import LiveTrackingControl from "../LiveTrackingControl";
 
 export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) {
   const [opsStatus, setOpsStatus] = useState("Standing by");
@@ -34,6 +35,7 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
     const socket = connectSocket();
 
     const handleLocationUpdate = (data: any) => {
+      console.log("[FieldAgent] Location update via socket:", data);
       setLocations((previous) => {
         const filtered = previous.filter((location) => location.deviceId !== data.deviceId);
         return [...filtered, data];
@@ -48,31 +50,60 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
       setSelectedUnit((current: any) => (current?.deviceId === data.deviceId ? data : current));
     };
 
+    // Socket listener for real-time updates
     socket.on("location-update", handleLocationUpdate);
+
+    const handleLocalLocationUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail) {
+        handleLocationUpdate(customEvent.detail);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("tm-location-update", handleLocalLocationUpdate);
+    }
+
+    // Polling fallback: fetch locations every 2 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        const query = deviceId ? `?deviceIds=${encodeURIComponent(deviceId)}&limit=10` : "?limit=10";
+        const token = window.localStorage.getItem("tm_auth_token");
+        const response = await fetch(`/api/locations${query}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const locations = await response.json();
+        
+        if (locations.length > 0) {
+          const latestLocation = locations[0]; // Most recent first
+          console.log("[FieldAgent] Location update via poll:", latestLocation);
+          
+          setLocations((previous) => {
+            const filtered = previous.filter((location) => location.deviceId !== latestLocation.deviceId);
+            return [...filtered, latestLocation];
+          });
+
+          setUnitTrails((previous) => {
+            const trail = previous[latestLocation.deviceId] || [];
+            const nextTrail = [...trail, [latestLocation.lng, latestLocation.lat]].slice(-20);
+            return { ...previous, [latestLocation.deviceId]: nextTrail };
+          });
+
+          setSelectedUnit((current: any) => (current?.deviceId === latestLocation.deviceId ? latestLocation : current));
+        }
+      } catch (error) {
+        console.warn("[FieldAgent] Polling failed:", error);
+      }
+    }, 2000);
+
     return () => {
       socket.off("location-update", handleLocationUpdate);
-    };
-  }, []);
-
-  const shareLocation = async () => {
-    try {
-      const lat = 6.5244 + (Math.random() - 0.5) * 0.01;
-      const lng = 3.3792 + (Math.random() - 0.5) * 0.01;
-      const res = await fetch("/api/location-update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId, lat, lng }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Location share failed");
+      if (typeof window !== "undefined") {
+        window.removeEventListener("tm-location-update", handleLocalLocationUpdate);
       }
-      setOpsStatus(`Location transmitted at ${new Date().toLocaleTimeString()}`);
-      handleQuickAction("location-shared");
-    } catch (e: any) {
-      setOpsStatus(e.message || "Location share failed");
-    }
-  };
+      clearInterval(pollInterval);
+    };
+  }, [deviceId]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full min-h-screen bg-linear-to-br from-slate-900 via-cyan-900 to-slate-900">
@@ -166,18 +197,7 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div id="field-location" className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">
             <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Location Sharing</h3>
-            <div className="space-y-3">
-              <button onClick={shareLocation} className={`w-full px-4 py-2 bg-cyan-600/30 border border-cyan-500/50 rounded-lg text-sm font-semibold text-cyan-100 hover:bg-cyan-600/40 transition ${
-                activeButton === "location-shared" ? "ring-2 ring-cyan-400" : ""
-              }`}>
-                {activeButton === "location-shared" ? "✓ Shared" : "📍 Share Current Location"}
-              </button>
-              <button onClick={() => { setAutoSync((prev) => !prev); handleQuickAction("auto-sync"); }} className={`w-full px-4 py-2 bg-cyan-600/20 border border-cyan-500/50 rounded-lg text-sm font-semibold text-cyan-200 hover:bg-cyan-600/30 transition ${
-                activeButton === "auto-sync" ? "ring-2 ring-cyan-400" : ""
-              }`}>
-                {autoSync ? "🔄 Auto-Sync Enabled" : "⏸️ Auto-Sync Paused"} {activeButton === "auto-sync" ? "✓" : ""}
-              </button>
-            </div>
+            <LiveTrackingControl defaultDeviceId={deviceId} compact allowDeviceSelection={false} />
           </div>
 
           <div id="field-tasks" className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">

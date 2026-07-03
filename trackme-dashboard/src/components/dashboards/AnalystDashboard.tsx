@@ -55,8 +55,36 @@ export default function AnalystDashboard() {
     };
 
     socket.on("location-update", handleLocationUpdate);
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const token = window.localStorage.getItem("tm_auth_token");
+        const response = await fetch("/api/locations?limit=30", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const rows = await response.json();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        const latestByDevice = new globalThis.Map<string, any>();
+        for (const row of rows) {
+          if (!row?.deviceId) continue;
+          if (!latestByDevice.has(row.deviceId)) {
+            latestByDevice.set(row.deviceId, row);
+          }
+        }
+
+        for (const row of latestByDevice.values()) {
+          handleLocationUpdate(row);
+        }
+      } catch {
+        // Ignore polling failures and keep socket updates active.
+      }
+    }, 2500);
+
     return () => {
       socket.off("location-update", handleLocationUpdate);
+      clearInterval(pollInterval);
     };
   }, []);
 

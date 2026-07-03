@@ -80,7 +80,12 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const db = await getDb();
-  const notifications = await db.collection("notifications").find({ userId }).sort({ createdAt: -1 }).toArray();
-  return NextResponse.json({ notifications });
+  try {
+    const db = await getDb();
+    const notifications = await db.collection("notifications").find({ userId }).sort({ createdAt: -1 }).toArray();
+    return NextResponse.json({ notifications, degraded: false });
+  } catch (error) {
+    console.error("Error loading notifications:", error);
+    return NextResponse.json({ notifications: [], degraded: true, error: "Notifications temporarily unavailable" });
+  }
 }

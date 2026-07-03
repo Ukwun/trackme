@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "../../../src/api/db";
 import bcrypt from "bcryptjs";
 import { createAuthToken } from "../../../src/api/authSession";
+import { rateLimit } from "../../../src/api/rateLimit";
 
 type LocalUser = {
   id: string;
@@ -13,8 +14,20 @@ type LocalUser = {
 
 const localUsers = new Map<string, LocalUser>();
 
-function getRegistrationRole() {
-  return "field_agent";
+function getRegistrationRole(email: string): string {
+  const prefix = email.split("@")[0].toLowerCase();
+  const roleMap: Record<string, string> = {
+    super_admin: "super_admin",
+    admin: "super_admin",
+    control_room: "control_room",
+    dispatcher: "dispatcher",
+    patrol_officer: "patrol_officer",
+    patrol: "patrol_officer",
+    analyst: "analyst",
+    field_agent: "field_agent",
+    field: "field_agent",
+  };
+  return roleMap[prefix] ?? "field_agent";
 }
 
 async function handleWithLocalStore(
@@ -33,7 +46,7 @@ async function handleWithLocalStore(
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
       email,
       password: hash,
-      role: getRegistrationRole(),
+      role: getRegistrationRole(email),
       createdAt: new Date().toISOString(),
     };
     localUsers.set(email.toLowerCase(), user);
@@ -74,9 +87,23 @@ export async function POST(req: Request) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
+    }
+    if (password.length < 10 || password.length > 128) {
+      return NextResponse.json({ error: "Password must be between 10 and 128 characters" }, { status: 400 });
+    }
+    if (!rateLimit(`auth:${normalizedEmail}`)) {
+      return NextResponse.json({ error: "Too many attempts. Please try again shortly." }, { status: 429 });
+    }
 
     try {
-      const db = await getDb();
+      // Use Promise.race to timeout DB connection after 3 seconds for auth
+      const dbPromise = getDb();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Auth DB timeout')), 3000)
+      );
+      const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDb>>;
 
       if (action === "register") {
         const existing = await db.collection("users").findOne({ email: normalizedEmail });
@@ -85,7 +112,7 @@ export async function POST(req: Request) {
         const user = {
           email: normalizedEmail,
           password: hash,
-          role: getRegistrationRole(),
+          role: "field_agent",
           createdAt: new Date().toISOString(),
         };
         await db.collection("users").insertOne(user);
@@ -104,7 +131,10 @@ export async function POST(req: Request) {
       if (allowLocalFallback) {
         return handleWithLocalStore(action, normalizedEmail, password);
       }
-      return NextResponse.json({ error: "Authentication backend unavailable", details: message }, { status: 503 });
+      return NextResponse.json({
+        error: "Authentication backend unavailable",
+        ...(process.env.NODE_ENV === "development" ? { details: message } : {}),
+      }, { status: 503 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error";

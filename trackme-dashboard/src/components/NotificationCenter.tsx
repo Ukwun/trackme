@@ -8,16 +8,21 @@ export default function NotificationCenter() {
   useEffect(() => {
     let unsub = () => {};
     async function fetchNotifications() {
-      const token = getClientSession().token;
-      const res = await fetch("/api/notifications", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
+      try {
+        const token = getClientSession().token;
+        const res = await fetch("/api/notifications", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) {
+          setNotifications([]);
+          return;
+        }
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+      } catch {
         setNotifications([]);
         return;
       }
-      const data = await res.json();
-      setNotifications(data.notifications || []);
     }
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 10000);

@@ -6,7 +6,26 @@ type RealtimeEvent =
   | "geofence-update"
   | "unit-update"
   | "analytics-update"
-  | "notification-update";
+  | "notification-update"
+  | "device-registered"
+  | "device-updated"
+  | "device-shared"
+  | "device-share-revoked"
+  | "region-created"
+  | "region-updated"
+  | "region-deleted"
+  | "roleChanged"
+  | "yourRoleUpdated"
+  | "roleChanged"
+  | "permissionsUpdated"
+  | "region-assigned"
+  | "region-updated"
+  | "teamCreated"
+  | "addedToTeam"
+  | "incidentEscalated"
+  | "authorityDelegated"
+  | "userStatusChanged"
+  | "systemEvent";
 
 type RealtimeServerGlobal = typeof globalThis & {
   __trackmeIo?: Server;

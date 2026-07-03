@@ -4,6 +4,12 @@ export type ClientSession = {
   userId: string | null;
 };
 
+function normalizeRoleForClient(role: string | null | undefined): string | null {
+  if (!role) return null;
+  if (role === "control_room_commander") return "control_room";
+  return role;
+}
+
 function base64UrlDecode(input: string): string {
   const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -21,7 +27,7 @@ export function getClientSession(): ClientSession {
   }
 
   const token = window.localStorage.getItem("tm_auth_token");
-  const role = window.localStorage.getItem("tm_auth_role");
+  const role = normalizeRoleForClient(window.localStorage.getItem("tm_auth_role"));
   if (!token) {
     return { token: null, role, userId: null };
   }
@@ -35,7 +41,7 @@ export function getClientSession(): ClientSession {
     const payload = JSON.parse(payloadRaw) as { userId?: string; role?: string };
     return {
       token,
-      role: role || payload.role || null,
+      role: normalizeRoleForClient(payload.role) || role || null,
       userId: payload.userId || null,
     };
   } catch {

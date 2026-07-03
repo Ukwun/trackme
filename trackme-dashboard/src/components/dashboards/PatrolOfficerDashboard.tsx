@@ -7,6 +7,7 @@ import RoleSidebar from "./RoleSidebar";
 import Map from "../Map";
 import { roleIcons, widgetIcons } from "../RoleIcons";
 import { connectSocket } from "../../realtime/socket";
+import LiveTrackingControl from "../LiveTrackingControl";
 
 export default function PatrolOfficerDashboard({ deviceId }: { deviceId: string }) {
   const [status, setStatus] = useState("On Patrol");
@@ -27,6 +28,7 @@ export default function PatrolOfficerDashboard({ deviceId }: { deviceId: string 
     const socket = connectSocket();
 
     const handleLocationUpdate = (data: any) => {
+      console.log("[PatrolOfficer] Location update via socket:", data);
       setLocations((previous) => {
         const filtered = previous.filter((location) => location.deviceId !== data.deviceId);
         return [...filtered, data];
@@ -41,11 +43,60 @@ export default function PatrolOfficerDashboard({ deviceId }: { deviceId: string 
       setSelectedUnit((current: any) => (current?.deviceId === data.deviceId ? data : current));
     };
 
+    // Socket listener for real-time updates
     socket.on("location-update", handleLocationUpdate);
+
+    const handleLocalLocationUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail) {
+        handleLocationUpdate(customEvent.detail);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("tm-location-update", handleLocalLocationUpdate);
+    }
+
+    // Polling fallback: fetch locations every 2 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        const query = deviceId ? `?deviceIds=${encodeURIComponent(deviceId)}&limit=10` : "?limit=10";
+        const token = window.localStorage.getItem("tm_auth_token");
+        const response = await fetch(`/api/locations${query}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const locations = await response.json();
+        
+        if (locations.length > 0) {
+          const latestLocation = locations[0]; // Most recent first
+          console.log("[PatrolOfficer] Location update via poll:", latestLocation);
+          
+          setLocations((previous) => {
+            const filtered = previous.filter((location) => location.deviceId !== latestLocation.deviceId);
+            return [...filtered, latestLocation];
+          });
+
+          setUnitTrails((previous) => {
+            const trail = previous[latestLocation.deviceId] || [];
+            const nextTrail = [...trail, [latestLocation.lng, latestLocation.lat]].slice(-20);
+            return { ...previous, [latestLocation.deviceId]: nextTrail };
+          });
+
+          setSelectedUnit((current: any) => (current?.deviceId === latestLocation.deviceId ? latestLocation : current));
+        }
+      } catch (error) {
+        console.warn("[PatrolOfficer] Polling failed:", error);
+      }
+    }, 2000);
+
     return () => {
       socket.off("location-update", handleLocationUpdate);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("tm-location-update", handleLocalLocationUpdate);
+      }
+      clearInterval(pollInterval);
     };
-  }, []);
+  }, [deviceId]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full min-h-screen bg-gradient-to-br from-slate-900 via-amber-900 to-slate-900">
@@ -200,6 +251,10 @@ export default function PatrolOfficerDashboard({ deviceId }: { deviceId: string 
               >
                 {activeAction === "share" ? "✓ Location shared" : "Share Location"}
               </button>
+
+              <div className="pt-2 border-t border-amber-500/30">
+                <LiveTrackingControl defaultDeviceId={deviceId} compact allowDeviceSelection={false} />
+              </div>
             </div>
           </div>
         </div>

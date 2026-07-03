@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "../../../src/api/db";
+import { resolveSession } from "../../../src/api/authSession";
 
 // GET /api/location-history?deviceId=UNIT_203
 export async function GET(req: Request) {
+  const { userId } = await resolveSession(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = req.url || "";
   const params = new URL(url, "http://localhost").searchParams;
   const deviceId = params.get("deviceId");

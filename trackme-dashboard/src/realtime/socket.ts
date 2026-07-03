@@ -27,9 +27,13 @@ export async function sendLocationUpdateWithGeofence(data: { deviceId: string; l
   // Send to socket for real-time map
   sendLocationUpdate(data);
   // Send to API for geofence event detection
+  const token = typeof window !== "undefined" ? window.localStorage.getItem("tm_auth_token") : null;
   await fetch("/api/location-update", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ deviceId: data.deviceId, lat: data.lat, lng: data.lng })
   });
 }

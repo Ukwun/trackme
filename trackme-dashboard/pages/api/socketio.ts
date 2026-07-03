@@ -5,6 +5,7 @@ import type { Socket as NetSocket } from "net";
 import type { NextApiResponse } from "next";
 import { getDb } from "../../src/api/db";
 import { registerRealtimeServer } from "../../src/realtime/server";
+import { registerRoleSyncHandlers } from "../../src/realtime/roleSyncHandlers";
 
 export const config = {
   api: {
@@ -37,8 +38,22 @@ function getIO(server: HTTPServer) {
         // Store location update in MongoDB
         try {
           const db = await getDb();
-          // Accepts: { deviceId, lat, lng, speed, heading, battery, timestamp }
-          await db.collection("location_history").insertOne({ ...data, receivedAt: new Date().toISOString() });
+          // Accepts: { deviceId, phone, imei, lat, lng, speed, heading, battery, timestamp }
+          const normalized = {
+            deviceId: data?.deviceId,
+            phone: data?.phone || null,
+            imei: data?.imei || null,
+            lat: Number(data?.lat),
+            lng: Number(data?.lng),
+            speed: Number.isFinite(Number(data?.speed)) ? Number(data.speed) : undefined,
+            heading: Number.isFinite(Number(data?.heading)) ? Number(data.heading) : undefined,
+            battery: Number.isFinite(Number(data?.battery)) ? Number(data.battery) : undefined,
+            timestamp: Number.isFinite(Number(data?.timestamp)) ? Number(data.timestamp) : Date.now(),
+            receivedAt: new Date().toISOString(),
+          };
+          if (normalized.deviceId && Number.isFinite(normalized.lat) && Number.isFinite(normalized.lng)) {
+            await db.collection("location_history").insertOne(normalized);
+          }
         } catch (e) {
           // Optionally log error
         }
@@ -60,6 +75,10 @@ function getIO(server: HTTPServer) {
         io.emit("notification-update", data);
       });
     });
+
+    // Register hierarchy-aware, role-scoped realtime channels.
+    registerRoleSyncHandlers(io);
+
     (server as any).io = io;
     registerRealtimeServer(io);
   }

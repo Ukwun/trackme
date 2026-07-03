@@ -3,35 +3,67 @@ import { checkGeofenceEvents } from "../geofences/events";
 import { getDb } from "../../../src/api/db";
 import { logActivity } from "../../../src/api/logActivity";
 import { emitRealtimeEvent } from "../../../src/realtime/server";
+import { resolveSession } from "../../../src/api/authSession";
 
-// POST /api/location-update { deviceId, lat, lng }
+// POST /api/location-update { deviceId, phone, imei, lat, lng, speed?, heading?, battery?, timestamp? }
 export async function POST(req: Request) {
-  const { deviceId, lat, lng } = await req.json();
+  const { userId } = await resolveSession(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { deviceId, phone, imei, lat, lng, speed, heading, battery, timestamp } = await req.json();
   if (!deviceId || lat == null || lng == null) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
-  // Save location
-  const db = await getDb();
-  const locationRecord = { deviceId, lat, lng, timestamp: Date.now() };
-  await db.collection("location_history").insertOne(locationRecord);
+
+  const normalizedLat = Number(lat);
+  const normalizedLng = Number(lng);
+  if (!Number.isFinite(normalizedLat) || !Number.isFinite(normalizedLng)) {
+    return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
+  }
+
+  const locationRecord = {
+    deviceId,
+    phone: phone || null,
+    imei: imei || null,
+    lat: normalizedLat,
+    lng: normalizedLng,
+    speed: Number.isFinite(Number(speed)) ? Number(speed) : undefined,
+    heading: Number.isFinite(Number(heading)) ? Number(heading) : undefined,
+    battery: Number.isFinite(Number(battery)) ? Number(battery) : undefined,
+    timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : Date.now(),
+  };
+
+  // Always emit realtime update so live map remains responsive even if persistence is degraded.
   emitRealtimeEvent("location-update", locationRecord);
 
-  // Geofence event detection
-  const events = await checkGeofenceEvents(deviceId, [lat, lng]);
-  for (const evt of events) {
-    await logActivity({
-      action: `geofence:${evt.type}`,
-      meta: {
+  let events: Array<{ type: string; geofence: { name: string } }> = [];
+  let persisted = false;
+  let degraded = false;
+
+  try {
+    const db = await getDb();
+    await db.collection("location_history").insertOne(locationRecord);
+    persisted = true;
+
+    // Geofence event detection
+    events = await checkGeofenceEvents(deviceId, [normalizedLat, normalizedLng]);
+    for (const evt of events) {
+      await logActivity({
+        action: `geofence:${evt.type}`,
+        meta: {
+          deviceId,
+          geofence: evt.geofence.name,
+        },
+      });
+      emitRealtimeEvent("geofence-update", {
         deviceId,
+        type: evt.type,
         geofence: evt.geofence.name,
-      },
-    });
-    emitRealtimeEvent("geofence-update", {
-      deviceId,
-      type: evt.type,
-      geofence: evt.geofence.name,
-      timestamp: new Date().toISOString(),
-    });
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch {
+    degraded = true;
   }
-  return NextResponse.json({ success: true, events });
+
+  return NextResponse.json({ success: true, events, persisted, degraded });
 }

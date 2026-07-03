@@ -16,7 +16,10 @@ export default function MovementPlayback({ deviceId }: { deviceId: string }) {
       setIndex(0);
       return;
     }
-    fetch(`/api/location-history?deviceId=${deviceId}`)
+    const token = window.localStorage.getItem("tm_auth_token");
+    fetch(`/api/location-history?deviceId=${encodeURIComponent(deviceId)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
       .then(res => res.json())
       .then(data => setHistory(data.history || []));
   }, [deviceId]);

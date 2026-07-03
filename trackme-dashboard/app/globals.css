@@ -60,6 +60,25 @@ body {
   font-family: var(--font-inter), system-ui, sans-serif;
 }
 
+button, a, input, select, textarea {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease,
+    box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+button:not(:disabled), a[href] { cursor: pointer; }
+button:not(:disabled):active { transform: translateY(1px) scale(0.99); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--tm-accent-cyan);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 h1, h2, h3, .tm-heading {
   font-family: var(--font-sora), var(--font-inter), sans-serif;
 }

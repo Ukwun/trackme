@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   if (!userId || !role) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!hasPermission({ role }, "device:view")) {
+  const canManageDevices = hasPermission({ role }, "device:create") || hasPermission({ role }, "device:*");
+  if (!canManageDevices) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!rateLimit(`${userId}:devices:manage:get`)) {
@@ -26,7 +27,8 @@ export async function DELETE(req: NextRequest) {
   if (!userId || !role) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!hasPermission({ role }, "device:view")) {
+  const canManageDevices = hasPermission({ role }, "device:create") || hasPermission({ role }, "device:*");
+  if (!canManageDevices) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!rateLimit(`${userId}:devices:manage:delete`)) {

@@ -15,9 +15,12 @@ export default function AnalyticsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<number>(0); // index for playback
-  const [session, setSession] = useState(() => getClientSession());
+  // Always start with empty session to match server render, then hydrate on client
+  const [session, setSession] = useState<{ token: string | null; role: string | null }>({ token: null, role: null });
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
     if (typeof window === "undefined") return;
     const syncAuth = () => {
       setSession(getClientSession());
@@ -106,10 +109,10 @@ export default function AnalyticsPanel() {
         <button className={`px-2 py-1 rounded ${mode === "trends" ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-200"}`} onClick={() => setMode("trends")}>Trends</button>
         <button className={`px-2 py-1 rounded ${mode === "anomalies" ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-200"}`} onClick={() => setMode("anomalies")}>Anomalies</button>
       </div>
-      {!session.token ? <UnauthorizedState detail="Authenticate to access analytics streams." /> : null}
-      {session.token && !canViewAnalytics ? <UnauthorizedState detail="Analytics is not enabled for your current role." /> : null}
-      {loading ? <LoadingState title="Pulling analytics telemetry..." /> : null}
-      {!loading && error ? <OperationalState title="Analytics feed unavailable" detail={error} tone="danger" /> : null}
+      {isMounted && !session.token ? <UnauthorizedState detail="Authenticate to access analytics streams." /> : null}
+      {isMounted && session.token && !canViewAnalytics ? <UnauthorizedState detail="Analytics is not enabled for your current role." /> : null}
+      {isMounted && loading ? <LoadingState title="Pulling analytics telemetry..." /> : null}
+      {isMounted && !loading && error ? <OperationalState title="Analytics feed unavailable" detail={error} tone="danger" /> : null}
       {mode === "all" && analytics.length > 0 && (
         <>
           <div className="mb-2">
