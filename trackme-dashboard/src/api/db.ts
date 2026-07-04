@@ -34,6 +34,12 @@ async function ensureIndexes(database: Db) {
       { key: { notificationId: 1, createdAt: -1 }, name: "dead_letters_notification_time" },
       { key: { channel: 1, createdAt: -1 }, name: "dead_letters_channel_time" },
     ]),
+    database.collection("authorized_cases").createIndexes([
+      { key: { caseNumber: 1 }, name: "cases_number_unique", unique: true },
+      { key: { warrantNumber: 1 }, name: "cases_warrant_unique", unique: true },
+      { key: { status: 1, expiresAt: 1 }, name: "cases_status_expiry" },
+      { key: { subjectType: 1, subjectIdentifier: 1 }, name: "cases_subject" },
+    ]),
   ]);
 }
 

@@ -6,6 +6,8 @@ import SharedDevices from "../SharedDevices";
 import MobileClientSimulator from "../MobileClientSimulator";
 import RoleSidebar from "./RoleSidebar";
 import { roleIcons, widgetIcons } from "../RoleIcons";
+import CaseAuthorizationPanel from "../CaseAuthorizationPanel";
+import AbujaTrackingSimulation from "../AbujaTrackingSimulation";
 
 export default function SuperAdminDashboard({ token }: { token: string }) {
   return (
@@ -66,6 +68,9 @@ export default function SuperAdminDashboard({ token }: { token: string }) {
         </div>
 
         {/* Primary Sections */}
+        <CaseAuthorizationPanel token={token} />
+        <AbujaTrackingSimulation />
+
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 sm:gap-4">
           {/* User Management (Primary) */}
           <div className="space-y-3 sm:space-y-4 xl:col-span-7">

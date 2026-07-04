@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AuthHeader from "../src/components/AuthHeader";
 import AuthForm from "../src/components/AuthForm";
 import NotificationCenter from "../src/components/NotificationCenter";
@@ -40,6 +40,14 @@ export default function DashboardPage() {
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+
+  const handleAuth = useCallback((nextToken: string, nextRole: string) => {
+    window.localStorage.setItem("tm_auth_token", nextToken);
+    window.localStorage.setItem("tm_auth_role", nextRole);
+    window.dispatchEvent(new Event("tm-auth-changed"));
+    setToken(nextToken);
+    setRole(nextRole);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -152,15 +160,7 @@ export default function DashboardPage() {
                 </div>
               </section>
               <section className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.72)] p-4 shadow-2xl shadow-cyan-950/30 backdrop-blur-md md:p-6">
-                <AuthForm onAuth={(nextToken, nextRole) => {
-                  if (typeof window !== "undefined") {
-                    window.localStorage.setItem("tm_auth_token", nextToken);
-                    window.localStorage.setItem("tm_auth_role", nextRole);
-                    window.dispatchEvent(new Event("tm-auth-changed"));
-                  }
-                  setToken(nextToken);
-                  setRole(nextRole);
-                }} />
+                <AuthForm onAuth={handleAuth} />
               </section>
             </div>
           </div>

@@ -20,5 +20,5 @@ export async function updateUserRole(userId: string, role: string) {
 
 export async function listUsers() {
   const db = await getDb();
-  return db.collection("users").find({}).toArray();
+  return db.collection("users").find({}, { projection: { password: 0 } }).toArray();
 }

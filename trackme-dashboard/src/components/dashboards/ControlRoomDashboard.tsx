@@ -3,6 +3,7 @@ import GeofencePanel from "../GeofencePanel";
 import UnitList from "../UnitList";
 import RoleSidebar from "./RoleSidebar";
 import { roleIcons, widgetIcons } from "../RoleIcons";
+import AbujaTrackingSimulation from "../AbujaTrackingSimulation";
 
 export default function ControlRoomDashboard() {
   return (
@@ -45,6 +46,8 @@ export default function ControlRoomDashboard() {
             <div className="text-sm font-bold text-purple-100">Geofences</div>
           </div>
         </div>
+
+        <AbujaTrackingSimulation />
 
         {/* Primary Incident & Geofence Management */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 sm:gap-4">
