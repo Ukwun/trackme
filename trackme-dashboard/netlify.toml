@@ -4,15 +4,12 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
+  # Tailwind/PostCSS and TypeScript are required during the production build.
+  NPM_FLAGS = "--include=dev"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-[context.production.environment]
-  NODE_ENV = "production"
-  # Required in Netlify environment settings:
-  # JWT_SECRET = "..."
-  # MONGODB_URI = "..."
-  # NEXT_PUBLIC_MAPBOX_TOKEN = "..."
-  # SENTRY_DSN = "..."
-  # NEXT_PUBLIC_SENTRY_DSN = "..."
+# Required in Netlify environment settings:
+# JWT_SECRET, MONGODB_URI, NEXT_PUBLIC_MAPBOX_TOKEN,
+# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY
