@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import AuthHeader from "../src/components/AuthHeader";
 import AuthForm from "../src/components/AuthForm";
 import NotificationCenter from "../src/components/NotificationCenter";
@@ -34,20 +35,15 @@ function StatCard({ label, value, helper }: { label: string; value: string; help
 }
 
 export default function DashboardPage() {
+  const { isLoaded: clerkLoaded, isSignedIn, userId: clerkUserId } = useAuth();
   const [search, setSearch] = useState("");
   const [locations, setLocations] = useState<any[]>([]);
   const [unitTrails, setUnitTrails] = useState<Record<string, Array<[number, number]>>>({});
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
-
-  const handleAuth = useCallback((nextToken: string, nextRole: string) => {
-    window.localStorage.setItem("tm_auth_token", nextToken);
-    window.localStorage.setItem("tm_auth_role", nextRole);
-    window.dispatchEvent(new Event("tm-auth-changed"));
-    setToken(nextToken);
-    setRole(nextRole);
-  }, []);
+  const [identityReady, setIdentityReady] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -62,6 +58,61 @@ export default function DashboardPage() {
     window.addEventListener("tm-auth-changed", syncAuthState);
     return () => window.removeEventListener("tm-auth-changed", syncAuthState);
   }, []);
+
+  useEffect(() => {
+    if (!clerkLoaded) return;
+
+    if (!isSignedIn || !clerkUserId) {
+      const storedToken = window.localStorage.getItem("tm_auth_token");
+      const storedRole = window.localStorage.getItem("tm_auth_role");
+      if (storedToken) {
+        setToken(storedToken);
+        setRole(storedRole || null);
+        setIdentityReady(true);
+        setAuthError("");
+        window.dispatchEvent(new Event("tm-auth-changed"));
+        return;
+      }
+
+      window.localStorage.removeItem("tm_auth_token");
+      window.localStorage.removeItem("tm_auth_role");
+      setToken(null);
+      setRole(null);
+      setIdentityReady(true);
+      setAuthError("");
+      window.dispatchEvent(new Event("tm-auth-changed"));
+      return;
+    }
+
+    const controller = new AbortController();
+    setIdentityReady(false);
+    setAuthError("");
+
+    async function synchronizeIdentity() {
+      try {
+        const response = await fetch("/api/auth/clerk", { method: "POST", signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Unable to prepare your workspace");
+        window.localStorage.setItem("tm_auth_token", data.token);
+        window.localStorage.setItem("tm_auth_role", data.role);
+        setToken(data.token);
+        setRole(data.role);
+        setIdentityReady(true);
+        window.dispatchEvent(new Event("tm-auth-changed"));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        window.localStorage.removeItem("tm_auth_token");
+        window.localStorage.removeItem("tm_auth_role");
+        setToken(null);
+        setRole(null);
+        setIdentityReady(false);
+        setAuthError(error instanceof Error ? error.message : "Unable to prepare your workspace");
+      }
+    }
+
+    void synchronizeIdentity();
+    return () => controller.abort();
+  }, [clerkLoaded, clerkUserId, isSignedIn]);
 
   useEffect(() => {
     const socket = connectSocket();
@@ -134,14 +185,17 @@ export default function DashboardPage() {
     return { total, moving, lowBattery, activeTrails };
   }, [locations, unitTrails]);
 
-  if (!token) {
+  const hasStoredSession = Boolean(token);
+
+  if ((!clerkLoaded && !hasStoredSession) || (!hasStoredSession && !isSignedIn) || !identityReady || !token) {
     return (
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.22),_transparent_35%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#111827_100%)] text-slate-100">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 lg:px-8">
           <AuthHeader />
-          <div className="flex flex-1 items-center">
-            <div className="grid w-full gap-8 lg:grid-cols-[1.05fr_0.95fr]">
-              <section className="space-y-6">
+          <div className="flex flex-1 items-center py-8 lg:py-12">
+            <div className="grid w-full items-stretch gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(440px,0.92fr)]">
+              <section className="tm-card flex flex-col justify-between rounded-3xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(8,47,73,0.42),rgba(2,6,23,0.78))] p-6 shadow-2xl shadow-cyan-950/20 md:p-8 lg:p-10">
+                <div className="space-y-6">
                 <div className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm text-cyan-100">
                   Live operations platform
                 </div>
@@ -153,14 +207,20 @@ export default function DashboardPage() {
                     Sign in to access live location tracking, activity logging, incident handling, geofence monitoring, and role-based dashboards built for actual deployment.
                   </p>
                 </div>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <StatCard label="Live coverage" value="24/7" helper="Socket-driven updates" />
                   <StatCard label="Audit trail" value="Full" helper="Every action logged" />
                   <StatCard label="Responsive" value="All devices" helper="Mobile, tablet, desktop" />
                 </div>
               </section>
-              <section className="tm-card rounded-3xl border border-[var(--tm-border)] bg-[rgba(2,6,23,0.72)] p-4 shadow-2xl shadow-cyan-950/30 backdrop-blur-md md:p-6">
-                <AuthForm onAuth={handleAuth} />
+              <section className="flex min-w-0 flex-col rounded-3xl border border-white/10 bg-[rgba(2,6,23,0.56)] p-4 shadow-2xl shadow-slate-950/50 backdrop-blur-md md:p-6" aria-label="Secure account access">
+                <div className="mb-4 px-1">
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300">Secure identity portal</p>
+                  <h2 className="mt-2 text-2xl font-black text-white">Access your TrackMe workspace</h2>
+                  <p className="mt-1 text-sm text-slate-400">Sign in or create an account using email or Google.</p>
+                </div>
+                <AuthForm syncError={authError} />
               </section>
             </div>
           </div>

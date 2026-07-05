@@ -8,9 +8,13 @@ export async function POST() {
   if (!clerkUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const clerkUser = await currentUser();
-  const email = clerkUser?.primaryEmailAddress?.emailAddress?.trim().toLowerCase();
+  const primaryEmail = clerkUser?.primaryEmailAddress;
+  const email = primaryEmail?.emailAddress?.trim().toLowerCase();
   if (!clerkUser || !email) {
     return NextResponse.json({ error: "A verified email address is required" }, { status: 400 });
+  }
+  if (primaryEmail?.verification?.status !== "verified") {
+    return NextResponse.json({ error: "Verify your email address before accessing TrackMe" }, { status: 403 });
   }
 
   try {

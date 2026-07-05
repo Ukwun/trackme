@@ -4,7 +4,7 @@ import { UnauthorizedState } from "./ui/OperationalState";
 import { getClientSession } from "../lib/clientAuth";
 import { sendLocationUpdateWithGeofence } from "../realtime/socket";
 
-const ALLOWED_ROLES = ["super_admin", "control_room", "dispatcher"];
+const ALLOWED_ROLES = ["super_admin", "control_room", "dispatcher", "field_agent", "patrol_officer", "field_supervisor", "analyst"];
 
 // Default starting location (Lagos, Nigeria)
 const DEFAULT_LAT = 6.5244;

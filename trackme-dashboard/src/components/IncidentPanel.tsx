@@ -194,16 +194,16 @@ export default function IncidentPanel() {
   return (
     <div className="tm-card p-4 mb-4">
       <h2 className="tm-heading text-lg font-semibold mb-2">Incident Details</h2>
-      <div className="mb-2 text-xs text-[var(--tm-text-secondary)]">ID: {incident.id}</div>
+      <div className="mb-2 text-xs text-(--tm-text-secondary)">ID: {incident.id}</div>
       <div className="mb-2 font-semibold">{incident.type}</div>
-      <div className="mb-2">Status: <span className="text-[var(--tm-accent-blue)]">{incident.status}</span></div>
+      <div className="mb-2">Status: <span className="text-(--tm-accent-blue)">{incident.status}</span></div>
       <div className="mb-2">Location: {incident.location}</div>
       <div className="mb-2">Assigned Units: {incident.assignedUnits?.join(", ") || "None"}</div>
       <div className="mb-2">Created: {incident.createdAt}</div>
       <div className="flex flex-wrap gap-2 my-2">
         <span className="font-semibold text-xs">Assign Unit:</span>
         {units.length === 0 ? (
-          <span className="text-xs text-[var(--tm-text-secondary)]">No units available</span>
+          <span className="text-xs text-(--tm-text-secondary)">No units available</span>
         ) : (
           units.map((u) => (
             <button
@@ -234,7 +234,7 @@ export default function IncidentPanel() {
               <li key={idx}>{t.time} - {t.status}</li>
             ))
           ) : (
-            <li className="text-[var(--tm-text-secondary)]">No events recorded</li>
+            <li className="text-(--tm-text-secondary)">No events recorded</li>
           )}
         </ul>
       </div>
