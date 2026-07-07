@@ -177,10 +177,10 @@ export default function DashboardPage() {
   if (!clerkLoaded || !isSignedIn || !identityReady || !token) {
     return (
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.22),_transparent_35%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#111827_100%)] text-slate-100">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 lg:px-8">
+        <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-4 py-5 lg:px-8">
           <AuthHeader />
-          <div className="flex flex-1 items-center py-8 lg:py-12">
-            <div className="grid w-full items-stretch gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(440px,0.92fr)]">
+          <div className="flex flex-1 items-start py-6 lg:items-center lg:py-8">
+            <div className="grid w-full items-start gap-6 lg:grid-cols-[minmax(0,1.12fr)_minmax(400px,0.88fr)]">
               <section className="tm-card flex flex-col justify-between rounded-3xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(8,47,73,0.42),rgba(2,6,23,0.78))] p-6 shadow-2xl shadow-cyan-950/20 md:p-8 lg:p-10">
                 <div className="space-y-6">
                 <div className="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm text-cyan-100">
@@ -201,7 +201,7 @@ export default function DashboardPage() {
                   <StatCard label="Responsive" value="All devices" helper="Mobile, tablet, desktop" />
                 </div>
               </section>
-              <section className="flex min-w-0 flex-col rounded-3xl border border-white/10 bg-[rgba(2,6,23,0.56)] p-4 shadow-2xl shadow-slate-950/50 backdrop-blur-md md:p-6" aria-label="Secure account access">
+              <section className="flex min-w-0 flex-col self-start rounded-3xl border border-white/10 bg-[rgba(2,6,23,0.56)] p-4 shadow-2xl shadow-slate-950/50 backdrop-blur-md md:p-5" aria-label="Secure account access">
                 <div className="mb-4 px-1">
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300">Secure identity portal</p>
                   <h2 className="mt-2 text-2xl font-black text-white">Access your TrackMe workspace</h2>
