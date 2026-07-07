@@ -63,17 +63,6 @@ export default function DashboardPage() {
     if (!clerkLoaded) return;
 
     if (!isSignedIn || !clerkUserId) {
-      const storedToken = window.localStorage.getItem("tm_auth_token");
-      const storedRole = window.localStorage.getItem("tm_auth_role");
-      if (storedToken) {
-        setToken(storedToken);
-        setRole(storedRole || null);
-        setIdentityReady(true);
-        setAuthError("");
-        window.dispatchEvent(new Event("tm-auth-changed"));
-        return;
-      }
-
       window.localStorage.removeItem("tm_auth_token");
       window.localStorage.removeItem("tm_auth_role");
       setToken(null);
@@ -185,9 +174,7 @@ export default function DashboardPage() {
     return { total, moving, lowBattery, activeTrails };
   }, [locations, unitTrails]);
 
-  const hasStoredSession = Boolean(token);
-
-  if ((!clerkLoaded && !hasStoredSession) || (!hasStoredSession && !isSignedIn) || !identityReady || !token) {
+  if (!clerkLoaded || !isSignedIn || !identityReady || !token) {
     return (
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.22),_transparent_35%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#111827_100%)] text-slate-100">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 lg:px-8">

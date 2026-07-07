@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { getDb } from "../../../../src/api/db";
 import { createAuthToken } from "../../../../src/api/authSession";
 
+const VALID_ROLES = new Set([
+  "super_admin", "control_room", "control_room_commander", "dispatcher",
+  "field_supervisor", "patrol_officer", "analyst", "field_agent",
+]);
+
 export async function POST() {
   const { userId: clerkUserId } = await auth();
   if (!clerkUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,7 +41,7 @@ export async function POST() {
           },
         }
       );
-      const role = typeof existing.role === "string" ? existing.role : "field_agent";
+      const role = typeof existing.role === "string" && VALID_ROLES.has(existing.role) ? existing.role : "field_agent";
       return NextResponse.json({ token: createAuthToken(String(existing._id), role), role });
     }
 
