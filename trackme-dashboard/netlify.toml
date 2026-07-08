@@ -12,6 +12,7 @@
   MONGODB_SERVER_SELECTION_TIMEOUT_MS = "15000"
   MONGODB_TLS = "true"
   MONGODB_DB_NAME = "trackme"
+  AUTH_ALLOW_LOCAL_FALLBACK = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
