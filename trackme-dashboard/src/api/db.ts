@@ -1,6 +1,41 @@
 import { MongoClient, Db } from 'mongodb';
 
-const uri = process.env.MONGODB_URI as string;
+function resolveMongoUri(): string {
+  const candidate = [
+    process.env.MONGODB_URI,
+    process.env.MONGODB_URL,
+    process.env.MONGO_URI,
+    process.env.DATABASE_URL,
+  ].find((value): value is string => Boolean(value?.trim()));
+
+  if (!candidate) {
+    throw new Error('No MongoDB connection string found. Set MONGODB_URI in the environment.');
+  }
+
+  return candidate;
+}
+
+function resolveDbName(uri: string): string {
+  const fromEnv = process.env.MONGODB_DB_NAME || process.env.MONGODB_DATABASE || process.env.MONGO_DB_NAME;
+  if (fromEnv?.trim()) {
+    return fromEnv.trim();
+  }
+
+  try {
+    const parsed = new URL(uri);
+    const path = parsed.pathname.replace(/^\/+/, '');
+    if (path) {
+      return decodeURIComponent(path);
+    }
+  } catch {
+    // Ignore malformed connection strings and fall back to the default database name.
+  }
+
+  return 'trackme';
+}
+
+const uri = resolveMongoUri();
+const dbName = resolveDbName(uri);
 const serverSelectionTimeoutMS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 12000);
 const family = process.env.MONGODB_FAMILY ? Number(process.env.MONGODB_FAMILY) : undefined;
 const tls = process.env.MONGODB_TLS ? process.env.MONGODB_TLS === 'true' : true;
@@ -81,7 +116,7 @@ export async function getDb() {
         retryWrites: true,
       });
       await client.connect();
-      db = client.db();
+      db = client.db(dbName);
       connectionError = null;
       // Index maintenance must never make authentication or API reads unavailable.
       indexesReady = ensureIndexes(db).catch((indexError) => {

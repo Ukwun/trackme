@@ -7,6 +7,11 @@
   NEXT_TELEMETRY_DISABLED = "1"
   # Tailwind/PostCSS and TypeScript are required during the production build.
   NPM_FLAGS = "--include=dev"
+  # Atlas serverless connections are more reliable over IPv4 on Netlify.
+  MONGODB_FAMILY = "4"
+  MONGODB_SERVER_SELECTION_TIMEOUT_MS = "15000"
+  MONGODB_TLS = "true"
+  MONGODB_DB_NAME = "trackme"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
