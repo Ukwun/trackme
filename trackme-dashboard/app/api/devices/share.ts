@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getDb } from "../../../src/api/db";
+import { resolveSession } from "../../../src/api/authSession";
 
 // POST: Share a device with another user
 export async function POST(req: Request) {
-  const { userId } = await auth();
+  const { userId } = await resolveSession(req);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -19,8 +19,8 @@ export async function POST(req: Request) {
 }
 
 // GET: List devices shared with the current user
-export async function GET() {
-  const { userId } = await auth();
+export async function GET(req: Request) {
+  const { userId } = await resolveSession(req);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

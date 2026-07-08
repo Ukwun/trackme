@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AuthHeader from "../src/components/AuthHeader";
 import AuthForm from "../src/components/AuthForm";
 import NotificationCenter from "../src/components/NotificationCenter";
@@ -35,15 +34,22 @@ function StatCard({ label, value, helper }: { label: string; value: string; help
 }
 
 export default function DashboardPage() {
-  const { isLoaded: clerkLoaded, isSignedIn, userId: clerkUserId } = useAuth();
   const [search, setSearch] = useState("");
   const [locations, setLocations] = useState<any[]>([]);
   const [unitTrails, setUnitTrails] = useState<Record<string, Array<[number, number]>>>({});
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [identityReady, setIdentityReady] = useState(false);
-  const [authError, setAuthError] = useState("");
+
+  const handleAuth = useCallback((result: { token: string; role: string; name?: string; email?: string }) => {
+    window.localStorage.setItem("tm_auth_token", result.token);
+    window.localStorage.setItem("tm_auth_role", result.role);
+    if (result.name) window.localStorage.setItem("tm_auth_name", result.name);
+    if (result.email) window.localStorage.setItem("tm_auth_email", result.email);
+    setToken(result.token);
+    setRole(result.role);
+    window.dispatchEvent(new Event("tm-auth-changed"));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -58,50 +64,6 @@ export default function DashboardPage() {
     window.addEventListener("tm-auth-changed", syncAuthState);
     return () => window.removeEventListener("tm-auth-changed", syncAuthState);
   }, []);
-
-  useEffect(() => {
-    if (!clerkLoaded) return;
-
-    if (!isSignedIn || !clerkUserId) {
-      window.localStorage.removeItem("tm_auth_token");
-      window.localStorage.removeItem("tm_auth_role");
-      setToken(null);
-      setRole(null);
-      setIdentityReady(true);
-      setAuthError("");
-      window.dispatchEvent(new Event("tm-auth-changed"));
-      return;
-    }
-
-    const controller = new AbortController();
-    setIdentityReady(false);
-    setAuthError("");
-
-    async function synchronizeIdentity() {
-      try {
-        const response = await fetch("/api/auth/clerk", { method: "POST", signal: controller.signal });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Unable to prepare your workspace");
-        window.localStorage.setItem("tm_auth_token", data.token);
-        window.localStorage.setItem("tm_auth_role", data.role);
-        setToken(data.token);
-        setRole(data.role);
-        setIdentityReady(true);
-        window.dispatchEvent(new Event("tm-auth-changed"));
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        window.localStorage.removeItem("tm_auth_token");
-        window.localStorage.removeItem("tm_auth_role");
-        setToken(null);
-        setRole(null);
-        setIdentityReady(false);
-        setAuthError(error instanceof Error ? error.message : "Unable to prepare your workspace");
-      }
-    }
-
-    void synchronizeIdentity();
-    return () => controller.abort();
-  }, [clerkLoaded, clerkUserId, isSignedIn]);
 
   useEffect(() => {
     const socket = connectSocket();
@@ -174,7 +136,7 @@ export default function DashboardPage() {
     return { total, moving, lowBattery, activeTrails };
   }, [locations, unitTrails]);
 
-  if (!clerkLoaded || !isSignedIn || !identityReady || !token) {
+  if (!token) {
     return (
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.22),_transparent_35%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#111827_100%)] text-slate-100">
         <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-4 py-5 lg:px-8">
@@ -205,9 +167,9 @@ export default function DashboardPage() {
                 <div className="mb-4 px-1">
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300">Secure identity portal</p>
                   <h2 className="mt-2 text-2xl font-black text-white">Access your TrackMe workspace</h2>
-                  <p className="mt-1 text-sm text-slate-400">Sign in or create an account using email or Google.</p>
+                  <p className="mt-1 text-sm text-slate-400">Sign in or create an account using your verified information.</p>
                 </div>
-                <AuthForm syncError={authError} />
+                <AuthForm onAuth={handleAuth} />
               </section>
             </div>
           </div>
@@ -242,6 +204,8 @@ export default function DashboardPage() {
                 if (typeof window !== "undefined") {
                   window.localStorage.removeItem("tm_auth_token");
                   window.localStorage.removeItem("tm_auth_role");
+                  window.localStorage.removeItem("tm_auth_name");
+                  window.localStorage.removeItem("tm_auth_email");
                   window.dispatchEvent(new Event("tm-auth-changed"));
                 }
                 setToken(null);

@@ -40,6 +40,11 @@ async function ensureIndexes(database: Db) {
       { key: { status: 1, expiresAt: 1 }, name: "cases_status_expiry" },
       { key: { subjectType: 1, subjectIdentifier: 1 }, name: "cases_subject" },
     ]),
+    database.collection("users").createIndexes([
+      { key: { email: 1 }, name: "users_email_unique", unique: true },
+      { key: { phone: 1 }, name: "users_phone_unique", unique: true, sparse: true },
+      { key: { role: 1, status: 1 }, name: "users_role_status" },
+    ]),
   ]);
 }
 

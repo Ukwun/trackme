@@ -1,143 +1,94 @@
-import { NextResponse } from "next/server";
-import { getDb } from "../../../src/api/db";
 import bcrypt from "bcryptjs";
+import { NextResponse } from "next/server";
 import { createAuthToken } from "../../../src/api/authSession";
+import { getDb } from "../../../src/api/db";
 import { rateLimit } from "../../../src/api/rateLimit";
 
 type LocalUser = {
   id: string;
+  name: string;
+  phone: string;
   email: string;
   password: string;
-  role: string;
+  role: "field_agent";
   createdAt: string;
 };
 
 const localUsers = new Map<string, LocalUser>();
 
-function getRegistrationRole(email: string): string {
-  const prefix = email.split("@")[0].toLowerCase();
-  const roleMap: Record<string, string> = {
-    super_admin: "super_admin",
-    admin: "super_admin",
-    control_room: "control_room",
-    dispatcher: "dispatcher",
-    patrol_officer: "patrol_officer",
-    patrol: "patrol_officer",
-    analyst: "analyst",
-    field_agent: "field_agent",
-    field: "field_agent",
-  };
-  return roleMap[prefix] ?? "field_agent";
+function normalizeNigerianPhone(input: string): string | null {
+  const compact = input.replace(/[\s()-]/g, "");
+  const local = compact.startsWith("+234") ? `0${compact.slice(4)}` : compact.startsWith("234") ? `0${compact.slice(3)}` : compact;
+  if (!/^0[789][01]\d{8}$/.test(local)) return null;
+  return `+234${local.slice(1)}`;
 }
 
-async function handleWithLocalStore(
-  action: string,
-  email: string,
-  password: string
-) {
+async function handleWithLocalStore(action: "register" | "login", details: { name: string; phone: string; email: string; password: string }) {
+  const { name, phone, email, password } = details;
   if (action === "register") {
-    const existing = localUsers.get(email.toLowerCase());
-    if (existing) {
-      return NextResponse.json({ error: "User exists" }, { status: 400 });
-    }
-
-    const hash = await bcrypt.hash(password, 10);
+    if (localUsers.has(email)) return NextResponse.json({ error: "An account already exists for this email" }, { status: 409 });
     const user: LocalUser = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-      email,
-      password: hash,
-      role: getRegistrationRole(email),
-      createdAt: new Date().toISOString(),
+      id: crypto.randomUUID(), name, phone, email,
+      password: await bcrypt.hash(password, 12), role: "field_agent", createdAt: new Date().toISOString(),
     };
-    localUsers.set(email.toLowerCase(), user);
-    return NextResponse.json({ success: true, mode: "local-dev" });
+    localUsers.set(email, user);
+    return NextResponse.json({ success: true, mode: "local-dev" }, { status: 201 });
   }
-
-  if (action === "login") {
-    const user = localUsers.get(email.toLowerCase());
-    if (!user) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-    }
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-    }
-
-    const token = createAuthToken(user.id, user.role);
-    return NextResponse.json({ token, role: user.role, mode: "local-dev" });
-  }
-
-  return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+  const user = localUsers.get(email);
+  if (!user || !(await bcrypt.compare(password, user.password))) return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+  return NextResponse.json({ token: createAuthToken(user.id, user.role), role: user.role, name: user.name, email: user.email, mode: "local-dev" });
 }
-
-// User roles: super_admin, control_room, dispatcher, patrol_officer, analyst, field_agent
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null);
     const action = body?.action;
-    const email = body?.email;
-    const password = body?.password;
-    if (action !== "register" && action !== "login") {
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-    }
+    if (action !== "register" && action !== "login") return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
-    if (!email || !password || typeof email !== "string" || typeof password !== "string") {
-      return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
-    }
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body?.password === "string" ? body.password : "";
+    const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
+    const phone = typeof body?.phone === "string" ? normalizeNigerianPhone(body.phone) : null;
 
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
-      return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
-    }
-    if (password.length < 10 || password.length > 128) {
-      return NextResponse.json({ error: "Password must be between 10 and 128 characters" }, { status: 400 });
-    }
-    if (!rateLimit(`auth:${normalizedEmail}`)) {
-      return NextResponse.json({ error: "Too many attempts. Please try again shortly." }, { status: 429 });
-    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
+    if (password.length < 10 || password.length > 128) return NextResponse.json({ error: "Password must be between 10 and 128 characters" }, { status: 400 });
+    if (action === "register" && (name.length < 2 || name.length > 100)) return NextResponse.json({ error: "Enter your full name" }, { status: 400 });
+    if (action === "register" && !phone) return NextResponse.json({ error: "Enter a valid Nigerian mobile number" }, { status: 400 });
+    if (!rateLimit(`auth:${email}`)) return NextResponse.json({ error: "Too many attempts. Please try again shortly." }, { status: 429 });
 
     try {
-      // Use Promise.race to timeout DB connection after 3 seconds for auth
-      const dbPromise = getDb();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Auth DB timeout')), 3000)
-      );
-      const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDb>>;
+      const db = await Promise.race([
+        getDb(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Authentication database timeout")), 5000)),
+      ]);
+      const users = db.collection("users");
 
       if (action === "register") {
-        const existing = await db.collection("users").findOne({ email: normalizedEmail });
-        if (existing) return NextResponse.json({ error: "User exists" }, { status: 400 });
-        const hash = await bcrypt.hash(password, 10);
-        const user = {
-          email: normalizedEmail,
-          password: hash,
-          role: "field_agent",
-          createdAt: new Date().toISOString(),
-        };
-        await db.collection("users").insertOne(user);
-        return NextResponse.json({ success: true, mode: "mongo" });
+        const existing = await users.findOne({ $or: [{ email }, { phone }] });
+        if (existing) return NextResponse.json({ error: "An account already exists for this email or phone number" }, { status: 409 });
+        await users.insertOne({
+          name, phone, email, password: await bcrypt.hash(password, 12), role: "field_agent",
+          authProvider: "email", status: "active", createdAt: new Date().toISOString(), lastLoginAt: null,
+        });
+        return NextResponse.json({ success: true, mode: "mongo" }, { status: 201 });
       }
 
-      const user = await db.collection("users").findOne({ email: normalizedEmail });
-      if (!user) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-      const valid = await bcrypt.compare(password, user.password);
-      if (!valid) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-      const token = createAuthToken(String(user._id), user.role);
-      return NextResponse.json({ token, role: user.role, mode: "mongo" });
-    } catch (dbError) {
-      const message = dbError instanceof Error ? dbError.message : String(dbError);
-      const allowLocalFallback = process.env.AUTH_ALLOW_LOCAL_FALLBACK === "true";
-      if (allowLocalFallback) {
-        return handleWithLocalStore(action, normalizedEmail, password);
+      const user = await users.findOne({ email });
+      if (!user || typeof user.password !== "string" || !(await bcrypt.compare(password, user.password))) {
+        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
       }
-      return NextResponse.json({
-        error: "Authentication backend unavailable",
-        ...(process.env.NODE_ENV === "development" ? { details: message } : {}),
-      }, { status: 503 });
+      if (user.status === "suspended") return NextResponse.json({ error: "This account has been suspended" }, { status: 403 });
+      const role = typeof user.role === "string" ? user.role : "field_agent";
+      await users.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date().toISOString() } });
+      return NextResponse.json({ token: createAuthToken(String(user._id), role), role, name: user.name || email.split("@")[0], email, mode: "mongo" });
+    } catch (databaseError) {
+      if (process.env.AUTH_ALLOW_LOCAL_FALLBACK === "true") {
+        return handleWithLocalStore(action, { name, phone: phone || "", email, password });
+      }
+      console.error("Authentication database unavailable", databaseError);
+      return NextResponse.json({ error: "Authentication service is temporarily unavailable" }, { status: 503 });
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Unexpected authentication error" }, { status: 500 });
   }
 }

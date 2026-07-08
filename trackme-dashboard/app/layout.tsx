@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppShell from "../src/components/AppShell";
-import { ClerkProvider } from "@clerk/nextjs";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -19,21 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={inter.variable}>
-        <ClerkProvider
-          appearance={{
-            variables: {
-              colorPrimary: "#06b6d4",
-              colorBackground: "#07111f",
-              borderRadius: "0.9rem",
-            },
-            options: {
-              socialButtonsVariant: "blockButton",
-              socialButtonsPlacement: "top",
-            },
-          }}
-        >
-          <AppShell>{children}</AppShell>
-        </ClerkProvider>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
