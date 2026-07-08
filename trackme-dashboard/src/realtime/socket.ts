@@ -4,13 +4,16 @@ let socket: ReturnType<typeof io> | null = null;
 
 export function connectSocket() {
   if (!socket) {
+    const isNetlify = typeof window !== "undefined" && window.location.hostname.endsWith(".netlify.app");
     // Ensure the API route has initialized the Socket.IO server before connecting.
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && !isNetlify) {
       void fetch("/api/socketio").catch(() => undefined);
     }
     socket = io({
       path: "/api/socketio",
       transports: ["websocket", "polling"],
+      autoConnect: !isNetlify,
+      reconnection: !isNetlify,
     });
   }
   return socket;

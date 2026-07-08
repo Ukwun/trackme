@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     try {
       const db = await Promise.race([
         getDb(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Authentication database timeout")), 5000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Authentication database timeout")), 18000)),
       ]);
       const users = db.collection("users");
 
@@ -86,7 +86,15 @@ export async function POST(req: Request) {
         return handleWithLocalStore(action, { name, phone: phone || "", email, password });
       }
       console.error("Authentication database unavailable", databaseError);
-      return NextResponse.json({ error: "Authentication service is temporarily unavailable" }, { status: 503 });
+      const message = databaseError instanceof Error ? databaseError.message : "";
+      const reason = /querySrv|ENOTFOUND|ECONNREFUSED/i.test(message)
+        ? "DATABASE_DNS_OR_NETWORK"
+        : /authentication failed|bad auth/i.test(message)
+          ? "DATABASE_CREDENTIALS"
+          : /timeout|selection/i.test(message)
+            ? "DATABASE_TIMEOUT"
+            : "DATABASE_UNAVAILABLE";
+      return NextResponse.json({ error: "Authentication service is temporarily unavailable", reason }, { status: 503 });
     }
   } catch {
     return NextResponse.json({ error: "Unexpected authentication error" }, { status: 500 });

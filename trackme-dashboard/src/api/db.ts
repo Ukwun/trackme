@@ -1,7 +1,7 @@
 import { MongoClient, Db } from 'mongodb';
 
 const uri = process.env.MONGODB_URI as string;
-const serverSelectionTimeoutMS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000); // Reduced from 12s for faster failures
+const serverSelectionTimeoutMS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 12000);
 const family = process.env.MONGODB_FAMILY ? Number(process.env.MONGODB_FAMILY) : undefined;
 const tls = process.env.MONGODB_TLS ? process.env.MONGODB_TLS === 'true' : true;
 const tlsAllowInvalidCertificates = process.env.MONGODB_TLS_ALLOW_INVALID_CERTIFICATES === 'true';
@@ -55,17 +55,7 @@ export async function getDb() {
 
   // Return existing connection if available
   if (client && db) {
-    try {
-      if (indexesReady) {
-        await indexesReady;
-      }
-      return db;
-    } catch (err) {
-      // Connection gone bad, reset it
-      client = null;
-      db = null;
-      connectionError = null;
-    }
+    return db;
   }
 
   // Avoid thundering herd: if connection failed recently, wait before retrying
@@ -85,16 +75,19 @@ export async function getDb() {
         family,
         tls,
         tlsAllowInvalidCertificates,
-        socketTimeoutMS: 5000,
+        connectTimeoutMS: 10000,
+        socketTimeoutMS: 15000,
+        maxPoolSize: 10,
         retryWrites: true,
       });
       await client.connect();
       db = client.db();
       connectionError = null;
-      indexesReady = ensureIndexes(db);
-      if (indexesReady) {
-        await indexesReady;
-      }
+      // Index maintenance must never make authentication or API reads unavailable.
+      indexesReady = ensureIndexes(db).catch((indexError) => {
+        console.error("MongoDB index initialization failed", indexError);
+      });
+      void indexesReady;
       return db;
     } catch (err) {
       lastErr = err as Error;

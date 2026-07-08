@@ -66,6 +66,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!token) return;
     const socket = connectSocket();
 
     const handleLocationUpdate = (data: any) => {
@@ -89,9 +90,8 @@ export default function DashboardPage() {
 
     const pollInterval = setInterval(async () => {
       try {
-        const authToken = window.localStorage.getItem("tm_auth_token");
         const response = await fetch("/api/locations?limit=40", {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) return;
         const rows = await response.json();
@@ -119,7 +119,7 @@ export default function DashboardPage() {
       socket.off("incident-update");
       clearInterval(pollInterval);
     };
-  }, []);
+  }, [token]);
 
   const filteredLocations = useMemo(() => {
     if (!search.trim()) return locations;
