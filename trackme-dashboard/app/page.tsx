@@ -213,13 +213,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (role === "super_admin") return <SuperAdminDashboard token={token} />;
-  if (role === "control_room" || role === "control_room_commander") return <ControlRoomDashboard />;
-  if (role === "dispatcher") return <DispatcherDashboard />;
-  if (role === "field_supervisor") return <DispatcherDashboard />;
-  if (role === "patrol_officer") return <PatrolOfficerDashboard deviceId={locations[0]?.deviceId || ""} />;
-  if (role === "analyst") return <AnalystDashboard />;
-  if (role === "field_agent") return <FieldAgentDashboard deviceId={locations[0]?.deviceId || ""} />;
+  if (role) return <FieldAgentDashboard deviceId={locations[0]?.deviceId || ""} />;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_28%),linear-gradient(180deg,#020617_0%,#0f172a_42%,#111827_100%)] text-slate-100">

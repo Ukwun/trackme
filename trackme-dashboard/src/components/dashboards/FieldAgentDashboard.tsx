@@ -7,6 +7,8 @@ import RoleSidebar from "./RoleSidebar";
 import { roleIcons, widgetIcons } from "../RoleIcons";
 import { connectSocket } from "../../realtime/socket";
 import LiveTrackingControl from "../LiveTrackingControl";
+import RegisterDevice from "../RegisterDevice";
+import MobileClientSimulator from "../MobileClientSimulator";
 
 export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) {
   const [opsStatus, setOpsStatus] = useState("Standing by");
@@ -16,6 +18,7 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
   const [locations, setLocations] = useState<any[]>([]);
   const [unitTrails, setUnitTrails] = useState<Record<string, Array<[number, number]>>>({});
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
+  const [activeDeviceId, setActiveDeviceId] = useState(deviceId);
 
   const handleQuickAction = (action: string) => {
     setActiveButton(action);
@@ -56,17 +59,27 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
     const handleLocalLocationUpdate = (event: Event) => {
       const customEvent = event as CustomEvent;
       if (customEvent.detail) {
+        if (customEvent.detail.deviceId) setActiveDeviceId(customEvent.detail.deviceId);
         handleLocationUpdate(customEvent.detail);
       }
     };
+    const handleTrackingStarted = (event: Event) => {
+      const customEvent = event as CustomEvent<{ deviceId?: string }>;
+      if (customEvent.detail?.deviceId) setActiveDeviceId(customEvent.detail.deviceId);
+    };
+    const handleTrackingStopped = () => setActiveDeviceId("");
     if (typeof window !== "undefined") {
+      const storedDeviceId = window.localStorage.getItem("tm_active_device_id");
+      if (storedDeviceId) setActiveDeviceId(storedDeviceId);
       window.addEventListener("tm-location-update", handleLocalLocationUpdate);
+      window.addEventListener("tm-device-tracking-started", handleTrackingStarted);
+      window.addEventListener("tm-device-tracking-stopped", handleTrackingStopped);
     }
 
     // Polling fallback: fetch locations every 2 seconds
     const pollInterval = setInterval(async () => {
       try {
-        const query = deviceId ? `?deviceIds=${encodeURIComponent(deviceId)}&limit=10` : "?limit=10";
+        const query = activeDeviceId ? `?deviceIds=${encodeURIComponent(activeDeviceId)}&limit=10` : "?limit=10";
         const token = window.localStorage.getItem("tm_auth_token");
         const response = await fetch(`/api/locations${query}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -100,10 +113,12 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
       socket.off("location-update", handleLocationUpdate);
       if (typeof window !== "undefined") {
         window.removeEventListener("tm-location-update", handleLocalLocationUpdate);
+        window.removeEventListener("tm-device-tracking-started", handleTrackingStarted);
+        window.removeEventListener("tm-device-tracking-stopped", handleTrackingStopped);
       }
       clearInterval(pollInterval);
     };
-  }, [deviceId]);
+  }, [activeDeviceId]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full min-h-screen bg-linear-to-br from-slate-900 via-cyan-900 to-slate-900">
@@ -124,11 +139,11 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-          <button onClick={() => focus("field-history", "Reviewing assigned task history")} className={`tm-card text-left p-3 sm:p-4 rounded-lg border border-cyan-500/30 bg-linear-to-br from-cyan-500/10 to-cyan-600/5 hover:border-cyan-400/50 transition ${ activeButton === "field-history" ? "ring-2 ring-cyan-400" : "" }`}>
+          <button onClick={() => focus("field-register", "Ready to register phone and IMEI")} className={`tm-card text-left p-3 sm:p-4 rounded-lg border border-cyan-500/30 bg-linear-to-br from-cyan-500/10 to-cyan-600/5 hover:border-cyan-400/50 transition ${ activeButton === "field-register" ? "ring-2 ring-cyan-400" : "" }`}>
             <div className="text-2xl sm:text-3xl mb-2">📋</div>
-            <div className="text-xs uppercase tracking-wider text-cyan-300 font-semibold">Assigned</div>
-            <div className="text-sm font-bold text-cyan-100">Tasks</div>
-            {activeButton === "field-history" && <div className="mt-2 text-xs text-cyan-400">✓ Loaded</div>}
+            <div className="text-xs uppercase tracking-wider text-cyan-300 font-semibold">Register</div>
+            <div className="text-sm font-bold text-cyan-100">Phone + IMEI</div>
+            {activeButton === "field-register" && <div className="mt-2 text-xs text-cyan-400">Ready</div>}
           </button>
           <button onClick={() => focus("field-location", "Preparing location share")} className={`tm-card text-left p-3 sm:p-4 rounded-lg border border-cyan-500/30 bg-linear-to-br from-cyan-500/10 to-cyan-600/5 hover:border-cyan-400/50 transition ${ activeButton === "field-location" ? "ring-2 ring-cyan-400" : "" }`}>
             <div className="text-2xl sm:text-3xl mb-2">{widgetIcons.location}</div>
@@ -143,6 +158,19 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
             {activeButton === "field-tasks" && <div className="mt-2 text-xs text-cyan-400">✓ Ready</div>}
           </button>
         </div>
+
+        <section id="field-register" className="grid grid-cols-1 xl:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.18fr)] gap-4">
+          <div className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">
+            <h2 className="text-lg sm:text-xl font-bold text-white mb-2">Register and Track Device</h2>
+            <p className="mb-4 text-sm text-cyan-100/80">Enter the field phone number and IMEI, then start tracking immediately.</p>
+            <RegisterDevice />
+          </div>
+          <div className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">
+            <h2 className="text-lg sm:text-xl font-bold text-white mb-2">Move Device in Real Time</h2>
+            <p className="mb-4 text-sm text-cyan-100/80">After starting tracking, update latitude and longitude here to see the map react.</p>
+            <MobileClientSimulator />
+          </div>
+        </section>
 
         {/* Live Location Map */}
         <div className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">
@@ -166,7 +194,7 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
               <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-2xl">🗂️</span> Activity History
               </h2>
-              <DeviceHistory deviceId={deviceId} />
+              <DeviceHistory deviceId={activeDeviceId} />
             </div>
           </div>
 
@@ -197,7 +225,7 @@ export default function FieldAgentDashboard({ deviceId }: { deviceId: string }) 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div id="field-location" className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">
             <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Location Sharing</h3>
-            <LiveTrackingControl defaultDeviceId={deviceId} compact allowDeviceSelection={false} />
+            <LiveTrackingControl defaultDeviceId={activeDeviceId} compact allowDeviceSelection={false} />
           </div>
 
           <div id="field-tasks" className="tm-card rounded-xl border border-cyan-500/40 bg-linear-to-br from-slate-800 to-slate-900 p-3 sm:p-4 md:p-5">

@@ -109,6 +109,10 @@ const PERMISSIONS: Record<string, string[]> = {
 
   // 🔷 FIELD AGENT - Simple task executor
   field_agent: [
+    'device:create',
+    'device:register:phone',
+    'device:register:imei',
+    'device:view',
     'task:view',
     'location:report',
     'status:update',

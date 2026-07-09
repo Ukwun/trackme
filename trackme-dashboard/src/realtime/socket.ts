@@ -27,6 +27,9 @@ export function sendLocationUpdate(data: { deviceId: string; lat: number; lng: n
 
 // Send location update to API for geofence event detection
 export async function sendLocationUpdateWithGeofence(data: { deviceId: string; lat: number; lng: number; speed?: number; heading?: number; battery?: number; timestamp?: number }) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("tm-location-update", { detail: data }));
+  }
   // Send to socket for real-time map
   sendLocationUpdate(data);
   // Send to API for geofence event detection

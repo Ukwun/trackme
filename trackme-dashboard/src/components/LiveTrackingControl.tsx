@@ -44,6 +44,12 @@ export default function LiveTrackingControl({
   }, []);
 
   useEffect(() => {
+    if (defaultDeviceId) {
+      setSelectedDeviceId(defaultDeviceId);
+    }
+  }, [defaultDeviceId]);
+
+  useEffect(() => {
     async function loadDevices() {
       if (!session.token) {
         setDevices([]);

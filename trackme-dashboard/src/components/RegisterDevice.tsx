@@ -52,7 +52,7 @@ export default function RegisterDevice() {
 
     try {
       // Immediately start tracking with the device ID
-      const deviceId = name || `UNIT_${Math.floor(Math.random() * 999)}`;
+      const deviceId = imei.trim() || name || `UNIT_${Math.floor(Math.random() * 999)}`;
 
       // Send initial location to map immediately (don't wait for DB)
       sendLocationUpdateWithGeofence({
@@ -73,7 +73,7 @@ export default function RegisterDevice() {
       window.dispatchEvent(new CustomEvent("tm-device-tracking-started", { detail: { deviceId } }));
 
       setTracking(deviceId);
-      setStatus(`✅ Tracking active for ${deviceId} | Use the simulator below to move the device`);
+      setStatus(`Tracking active for ${deviceId} | Use the live location controller below to move the device`);
       setPhone("");
       setImei("");
       setName("");
