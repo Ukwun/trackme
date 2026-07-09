@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState("");
+  const [inviteDeviceId, setInviteDeviceId] = useState("");
 
   const persistAuth = useCallback((result: { token: string; role?: string | null; name?: string | null; email?: string | null }) => {
     window.localStorage.setItem("tm_auth_token", result.token);
@@ -68,6 +69,7 @@ export default function DashboardPage() {
     syncAuthState();
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("authError");
+    const trackInvite = params.get("track");
     if (authError) {
       setAuthNotice(
         authError === "google-not-configured"
@@ -75,6 +77,11 @@ export default function DashboardPage() {
           : "Google sign-in could not be completed. Please try again or use email and password."
       );
       window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (trackInvite) {
+      setInviteDeviceId(trackInvite);
+      window.localStorage.setItem("tm_active_device_id", trackInvite);
+      setAuthNotice("Tracking invite detected. Sign in, then start GPS sharing from the live location control.");
     }
 
     const hydrateServerSession = async () => {
@@ -213,7 +220,14 @@ export default function DashboardPage() {
     );
   }
 
-  if (role) return <FieldAgentDashboard deviceId={locations[0]?.deviceId || ""} />;
+  const assignedDeviceId = inviteDeviceId || (typeof window !== "undefined" ? window.localStorage.getItem("tm_active_device_id") || "" : "") || locations[0]?.deviceId || "";
+
+  if (role === "super_admin") return <SuperAdminDashboard token={token} />;
+  if (role === "control_room") return <ControlRoomDashboard />;
+  if (role === "dispatcher") return <DispatcherDashboard />;
+  if (role === "patrol_officer") return <PatrolOfficerDashboard deviceId={assignedDeviceId} />;
+  if (role === "analyst") return <AnalystDashboard />;
+  if (role === "field_agent" || role === "field_supervisor") return <FieldAgentDashboard deviceId={assignedDeviceId} />;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_28%),linear-gradient(180deg,#020617_0%,#0f172a_42%,#111827_100%)] text-slate-100">
@@ -308,7 +322,9 @@ export default function DashboardPage() {
                         <td className="px-3 py-2">{location.speed ?? "-"}</td>
                         <td className="px-3 py-2">{location.heading ?? "-"}</td>
                         <td className="px-3 py-2">{location.battery ?? "-"}</td>
-                        <td className="px-3 py-2">{location.timestamp ? new Date(location.timestamp * 1000).toLocaleString() : "-"}</td>
+                        <td className="px-3 py-2">
+                          {location.timestamp ? new Date(Number(location.timestamp) > 1000000000000 ? Number(location.timestamp) : Number(location.timestamp) * 1000).toLocaleString() : "-"}
+                        </td>
                       </tr>
                     ))}
                     {filteredLocations.length === 0 && (

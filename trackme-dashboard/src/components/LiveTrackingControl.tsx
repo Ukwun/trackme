@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FaBroadcastTower, FaCircleNotch, FaLocationArrow, FaLock, FaStopCircle } from "react-icons/fa";
 import { getClientSession } from "../lib/clientAuth";
 import { sendLocationUpdate } from "../realtime/socket";
 
@@ -32,6 +33,7 @@ export default function LiveTrackingControl({
   const [selectedDeviceId, setSelectedDeviceId] = useState(defaultDeviceId || "");
   const [tracking, setTracking] = useState(false);
   const [status, setStatus] = useState("Idle");
+  const [accuracy, setAccuracy] = useState<number | null>(null);
   const [lastFix, setLastFix] = useState<string | null>(null);
   const watchRef = useRef<number | null>(null);
 
@@ -93,14 +95,15 @@ export default function LiveTrackingControl({
 
     const payload = {
       deviceId: selectedDeviceId,
-      phone: device?.phone || null,
+      phone: device?.phone || (typeof window !== "undefined" ? window.localStorage.getItem("tm_active_device_phone") : null),
       imei: device?.imei || selectedDeviceId,
       lat: coords.latitude,
       lng: coords.longitude,
       speed: Number.isFinite(coords.speed) ? Number(coords.speed) : undefined,
       heading: Number.isFinite(coords.heading) ? Number(coords.heading) : undefined,
       battery: undefined,
-      timestamp: Date.now(),
+      accuracy: Number.isFinite(coords.accuracy) ? Number(coords.accuracy) : undefined,
+      timestamp: Math.floor(Date.now() / 1000),
     };
 
     if (typeof window !== "undefined") {
@@ -119,6 +122,7 @@ export default function LiveTrackingControl({
     });
 
     setLastFix(new Date().toLocaleTimeString());
+    setAccuracy(Number.isFinite(coords.accuracy) ? Math.round(Number(coords.accuracy)) : null);
     setStatus("Live tracking active");
   }
 
@@ -151,7 +155,7 @@ export default function LiveTrackingControl({
 
     watchRef.current = watchId;
     setTracking(true);
-    setStatus("Tracking started");
+    setStatus("Waiting for first GPS fix");
   }
 
   function stopTracking() {
@@ -160,14 +164,15 @@ export default function LiveTrackingControl({
       watchRef.current = null;
     }
     setTracking(false);
+    setAccuracy(null);
     setStatus("Tracking stopped");
   }
 
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
       <div>
-        <label className="block text-xs uppercase tracking-wider text-cyan-300 font-semibold mb-2">
-          Tracking Device (Phone + IMEI)
+        <label className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-300">
+          <FaLock /> Authorized device
         </label>
         {allowDeviceSelection ? (
           <select
@@ -189,7 +194,7 @@ export default function LiveTrackingControl({
           <div className="rounded-lg border border-cyan-500/40 bg-slate-900/70 px-3 py-2 text-sm text-cyan-100">
             {(() => {
               const device = devices.find((d) => deviceIdFrom(d) === selectedDeviceId);
-              if (!device) return "Assigned device only";
+              if (!device) return selectedDeviceId || "Assigned device only";
               const id = deviceIdFrom(device);
               return `${device.name || "Assigned device"} - ${device.phone || "No phone"} - ${device.imei || id}`;
             })()}
@@ -202,23 +207,31 @@ export default function LiveTrackingControl({
           type="button"
           onClick={startTracking}
           disabled={tracking || !selectedDeviceId}
-          className="rounded-lg border border-green-500/50 bg-green-600/20 px-3 py-2 text-sm font-semibold text-green-100 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-lg border border-green-500/50 bg-green-600/20 px-3 py-2 text-sm font-semibold text-green-100 hover:bg-green-600/30 disabled:opacity-50"
         >
-          Start Live Tracking
+          {tracking ? <FaCircleNotch className="animate-spin" /> : <FaLocationArrow />} Start GPS
         </button>
         <button
           type="button"
           onClick={stopTracking}
           disabled={!tracking}
-          className="rounded-lg border border-red-500/50 bg-red-600/20 px-3 py-2 text-sm font-semibold text-red-100 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-600/20 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-600/30 disabled:opacity-50"
         >
-          Stop Tracking
+          <FaStopCircle /> Stop
         </button>
       </div>
 
-      <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-2 text-xs text-cyan-100">
-        Status: <span className="font-semibold">{status}</span>
-        {lastFix ? <span> • Last GPS fix: {lastFix}</span> : null}
+      <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs leading-5 text-cyan-100">
+        <div className="flex items-center gap-2 font-semibold">
+          <FaBroadcastTower className={tracking ? "text-green-300" : "text-cyan-300"} />
+          {status}
+        </div>
+        {lastFix ? (
+          <div className="mt-1 text-cyan-100/75">
+            Last GPS fix: {lastFix}
+            {accuracy != null ? ` | Accuracy: ${accuracy}m` : ""}
+          </div>
+        ) : null}
       </div>
     </div>
   );

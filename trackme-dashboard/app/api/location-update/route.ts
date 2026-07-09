@@ -5,11 +5,11 @@ import { logActivity } from "../../../src/api/logActivity";
 import { emitRealtimeEvent } from "../../../src/realtime/server";
 import { resolveSession } from "../../../src/api/authSession";
 
-// POST /api/location-update { deviceId, phone, imei, lat, lng, speed?, heading?, battery?, timestamp? }
+// POST /api/location-update { deviceId, phone, imei, lat, lng, speed?, heading?, battery?, accuracy?, timestamp? }
 export async function POST(req: Request) {
   const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { deviceId, phone, imei, lat, lng, speed, heading, battery, timestamp } = await req.json();
+  const { deviceId, phone, imei, lat, lng, speed, heading, battery, accuracy, timestamp } = await req.json();
   if (!deviceId || lat == null || lng == null) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
@@ -29,7 +29,8 @@ export async function POST(req: Request) {
     speed: Number.isFinite(Number(speed)) ? Number(speed) : undefined,
     heading: Number.isFinite(Number(heading)) ? Number(heading) : undefined,
     battery: Number.isFinite(Number(battery)) ? Number(battery) : undefined,
-    timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : Date.now(),
+    accuracy: Number.isFinite(Number(accuracy)) ? Number(accuracy) : undefined,
+    timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : Math.floor(Date.now() / 1000),
   };
 
   // Always emit realtime update so live map remains responsive even if persistence is degraded.

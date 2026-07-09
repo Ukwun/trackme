@@ -1,12 +1,30 @@
 "use client";
+
 import { useEffect, useState } from "react";
+import {
+  FaCheckCircle,
+  FaCopy,
+  FaIdCard,
+  FaLink,
+  FaLocationArrow,
+  FaPauseCircle,
+  FaPhoneAlt,
+  FaSatelliteDish,
+} from "react-icons/fa";
 import { UnauthorizedState } from "./ui/OperationalState";
 import { getClientSession } from "../lib/clientAuth";
 import { sendLocationUpdateWithGeofence } from "../realtime/socket";
 
-const ALLOWED_ROLES = ["super_admin", "control_room", "dispatcher", "field_agent", "patrol_officer", "field_supervisor", "analyst"];
+const ALLOWED_ROLES = [
+  "super_admin",
+  "control_room",
+  "dispatcher",
+  "field_agent",
+  "patrol_officer",
+  "field_supervisor",
+  "analyst",
+];
 
-// Default starting location (Lagos, Nigeria)
 const DEFAULT_LAT = 6.5244;
 const DEFAULT_LNG = 3.3792;
 
@@ -17,6 +35,8 @@ export default function RegisterDevice() {
   const [status, setStatus] = useState<string | null>(null);
   const [session, setSession] = useState(() => getClientSession());
   const [tracking, setTracking] = useState<string | null>(null);
+  const [consentLink, setConsentLink] = useState("");
+  const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -33,6 +53,14 @@ export default function RegisterDevice() {
     return <UnauthorizedState detail="Device registration is limited to command-and-control roles." />;
   }
 
+  function buildConsentLink(deviceId: string) {
+    if (typeof window === "undefined") return "";
+    const url = new URL(window.location.origin);
+    url.searchParams.set("track", deviceId);
+    url.searchParams.set("consent", "required");
+    return url.toString();
+  }
+
   async function handleStartTracking(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
@@ -44,19 +72,22 @@ export default function RegisterDevice() {
       return;
     }
 
-    if (!phone || !imei) {
+    if (!phone.trim() || !imei.trim()) {
       setStatus("Phone number and IMEI are required");
       setIsLoading(false);
       return;
     }
 
     try {
-      // Immediately start tracking with the device ID
-      const deviceId = imei.trim() || name || `UNIT_${Math.floor(Math.random() * 999)}`;
+      const cleanPhone = phone.trim();
+      const cleanImei = imei.trim();
+      const deviceId = cleanImei || name.trim() || `UNIT_${Math.floor(Math.random() * 999)}`;
+      const link = buildConsentLink(deviceId);
 
-      // Send initial location to map immediately (don't wait for DB)
       sendLocationUpdateWithGeofence({
         deviceId,
+        phone: cleanPhone,
+        imei: cleanImei,
         lat: DEFAULT_LAT,
         lng: DEFAULT_LNG,
         speed: 0,
@@ -65,37 +96,40 @@ export default function RegisterDevice() {
         timestamp: Math.floor(Date.now() / 1000),
       });
 
-      // Store active tracking device in localStorage for simulator to read
       localStorage.setItem("tm_active_device_id", deviceId);
-      localStorage.setItem("tm_active_device_phone", phone);
+      localStorage.setItem("tm_active_device_phone", cleanPhone);
+      localStorage.setItem("tm_active_device_imei", cleanImei);
+      if (link) localStorage.setItem("tm_active_consent_link", link);
 
-      // Dispatch event so simulator updates
-      window.dispatchEvent(new CustomEvent("tm-device-tracking-started", { detail: { deviceId } }));
+      window.dispatchEvent(
+        new CustomEvent("tm-device-tracking-started", {
+          detail: { deviceId, phone: cleanPhone, imei: cleanImei, consentLink: link },
+        })
+      );
 
       setTracking(deviceId);
-      setStatus(`Tracking active for ${deviceId} | Use the live location controller below to move the device`);
+      setConsentLink(link);
+      setStatus(`Consent session prepared for ${deviceId}. Send the link to the device owner, then start GPS after permission is granted.`);
       setPhone("");
       setImei("");
       setName("");
 
-      // Try to persist to database in the background (with timeout)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
+
       fetch("/api/devices", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.token}`,
         },
-        body: JSON.stringify({ phone, imei, name }),
+        body: JSON.stringify({ phone: cleanPhone, imei: cleanImei, name }),
         signal: controller.signal,
-      }).catch(() => {
-        // Silently ignore DB persistence errors
-      }).finally(() => clearTimeout(timeoutId));
-
-    } catch (err: any) {
-      setStatus("Error: " + err.message);
+      })
+        .catch(() => undefined)
+        .finally(() => clearTimeout(timeoutId));
+    } catch (err: unknown) {
+      setStatus("Error: " + (err instanceof Error ? err.message : "Unable to prepare tracking session"));
     } finally {
       setIsLoading(false);
     }
@@ -104,20 +138,46 @@ export default function RegisterDevice() {
   function handleStopTracking() {
     localStorage.removeItem("tm_active_device_id");
     localStorage.removeItem("tm_active_device_phone");
+    localStorage.removeItem("tm_active_device_imei");
+    localStorage.removeItem("tm_active_consent_link");
     window.dispatchEvent(new CustomEvent("tm-device-tracking-stopped"));
     setTracking(null);
+    setConsentLink("");
+    setCopied(false);
     setStatus(null);
   }
 
+  async function copyConsentLink() {
+    if (!consentLink) return;
+    try {
+      await navigator.clipboard.writeText(consentLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setStatus("Copy failed. Select the consent link manually.");
+    }
+  }
+
   return (
-    <form onSubmit={handleStartTracking} className="max-w-md w-full p-4 bg-gradient-to-br from-green-500/10 to-emerald-600/5 dark:bg-zinc-800 rounded-lg shadow-lg border border-green-500/30 dark:border-green-500/20 mb-8">
-      <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-white">🚀 Quick Track</h2>
+    <form onSubmit={handleStartTracking} className="w-full space-y-4 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-4 shadow-lg shadow-emerald-950/20">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-300/15 text-emerald-100">
+          <FaSatelliteDish />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">Consent-Based Live Track</h2>
+          <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+            Phone number and IMEI identify the registered device. Live GPS starts when the phone grants location permission.
+          </p>
+        </div>
+      </div>
+
       <input
         type="text"
         placeholder="Phone Number (e.g., +234 802 900 1234)"
         value={phone}
-        onChange={e => setPhone(e.target.value)}
-        className="mb-2 p-2 border rounded w-full bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white placeholder-zinc-500 dark:placeholder-zinc-400 border-zinc-300 dark:border-zinc-600"
+        onChange={(e) => setPhone(e.target.value)}
+        className="w-full rounded-lg border border-emerald-300/30 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500"
         disabled={tracking !== null}
         required
       />
@@ -125,8 +185,8 @@ export default function RegisterDevice() {
         type="text"
         placeholder="IMEI (e.g., 352656092036904)"
         value={imei}
-        onChange={e => setImei(e.target.value)}
-        className="mb-2 p-2 border rounded w-full bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white placeholder-zinc-500 dark:placeholder-zinc-400 border-zinc-300 dark:border-zinc-600"
+        onChange={(e) => setImei(e.target.value)}
+        className="w-full rounded-lg border border-emerald-300/30 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500"
         disabled={tracking !== null}
         required
       />
@@ -134,45 +194,64 @@ export default function RegisterDevice() {
         type="text"
         placeholder="Device Name (optional, e.g., UNIT_203)"
         value={name}
-        onChange={e => setName(e.target.value)}
-        className="mb-2 p-2 border rounded w-full bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white placeholder-zinc-500 dark:placeholder-zinc-400 border-zinc-300 dark:border-zinc-600"
+        onChange={(e) => setName(e.target.value)}
+        className="w-full rounded-lg border border-emerald-300/30 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500"
         disabled={tracking !== null}
       />
+
       {!tracking ? (
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           disabled={isLoading}
-          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-2 rounded-lg font-semibold hover:from-green-700 hover:to-emerald-700 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-300/40 bg-emerald-500/25 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-500/35 disabled:opacity-50"
         >
-          {isLoading ? "Starting..." : "🗺️ Start Tracking"}
+          <FaLocationArrow /> {isLoading ? "Preparing..." : "Create Tracking Session"}
         </button>
       ) : (
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={handleStopTracking}
-          className="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-2 rounded-lg font-semibold hover:from-red-700 hover:to-rose-700"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/35 bg-red-500/20 px-4 py-2 text-sm font-bold text-red-100 hover:bg-red-500/30"
         >
-          ⏹️ Stop Tracking
+          <FaPauseCircle /> End Session
         </button>
       )}
-      
+
       {tracking && (
-        <div className="mt-3 p-3 rounded-lg bg-green-500/20 border border-green-500/50">
-          <div className="text-sm font-semibold text-green-700 dark:text-green-400">✅ TRACKING LIVE</div>
-          <div className="text-xs text-green-600 dark:text-green-300 mt-1">Device: {tracking}</div>
-          <div className="text-xs text-green-600 dark:text-green-300">Location: {DEFAULT_LAT.toFixed(4)}, {DEFAULT_LNG.toFixed(4)}</div>
+        <div className="space-y-3 rounded-lg border border-emerald-300/30 bg-emerald-400/10 p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-100">
+            <FaCheckCircle /> Session ready
+          </div>
+          <div className="grid gap-2 text-xs text-emerald-100/80 sm:grid-cols-2">
+            <span className="flex items-center gap-2">
+              <FaIdCard /> {tracking}
+            </span>
+            <span className="flex items-center gap-2">
+              <FaPhoneAlt /> Verified metadata
+            </span>
+          </div>
+          {consentLink && (
+            <div className="rounded-lg border border-white/10 bg-slate-950/50 p-2">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-200">
+                <FaLink /> Consent link
+              </div>
+              <div className="break-all text-xs text-slate-200">{consentLink}</div>
+              <button
+                type="button"
+                onClick={copyConsentLink}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-300/20"
+              >
+                <FaCopy /> {copied ? "Copied" : "Copy invite link"}
+              </button>
+            </div>
+          )}
+          <div className="text-xs text-emerald-100/70">
+            Initial marker: {DEFAULT_LAT.toFixed(4)}, {DEFAULT_LNG.toFixed(4)}
+          </div>
         </div>
       )}
-      
-      {status && (
-        <div className={`mt-2 text-sm p-2 rounded text-center ${
-          tracking 
-            ? "bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/50"
-            : "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-white"
-        }`}>
-          {status}
-        </div>
-      )}
+
+      {status && <div className="rounded-lg border border-white/10 bg-slate-950/45 p-3 text-center text-xs leading-5 text-slate-200">{status}</div>}
     </form>
   );
 }
