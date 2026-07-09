@@ -1,5 +1,4 @@
 "use client";
-import * as Sentry from '@sentry/nextjs';
 import { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
@@ -21,12 +20,12 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    Sentry.captureException(error, { extra: { ...errorInfo } });
+    console.error("TrackMe UI error", error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
-      return <div className="p-8 text-center text-red-600">Something went wrong. Our team has been notified.</div>;
+      return <div className="p-8 text-center text-red-600">Something went wrong. Please refresh and try again.</div>;
     }
     return this.props.children;
   }

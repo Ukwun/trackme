@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
-import { createAuthToken } from "../../../src/api/authSession";
+import { buildUserSelector, clearAuthCookie, createAuthCookie, createAuthToken, getAuthTokenFromRequest, resolveSession } from "../../../src/api/authSession";
 import { getDb } from "../../../src/api/db";
 import { rateLimit } from "../../../src/api/rateLimit";
 
@@ -36,7 +36,45 @@ async function handleWithLocalStore(action: "register" | "login", details: { nam
   }
   const user = localUsers.get(email);
   if (!user || !(await bcrypt.compare(password, user.password))) return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
-  return NextResponse.json({ token: createAuthToken(user.id, user.role), role: user.role, name: user.name, email: user.email, mode: "local-dev" });
+  const token = createAuthToken(user.id, user.role);
+  const response = NextResponse.json({ token, role: user.role, name: user.name, email: user.email, mode: "local-dev" });
+  response.headers.set("Set-Cookie", createAuthCookie(token));
+  return response;
+}
+
+function buildAuthenticatedResponse(payload: { userId: string; role: string; name: string; email: string; mode: string }) {
+  const token = createAuthToken(payload.userId, payload.role);
+  const response = NextResponse.json({ token, role: payload.role, name: payload.name, email: payload.email, mode: payload.mode });
+  response.headers.set("Set-Cookie", createAuthCookie(token));
+  return response;
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  if (url.searchParams.get("action") !== "session") {
+    return NextResponse.json({ error: "Unsupported auth action" }, { status: 400 });
+  }
+
+  const token = getAuthTokenFromRequest(req);
+  const { userId } = await resolveSession(req);
+  if (!token || !userId) return NextResponse.json({ authenticated: false }, { status: 401 });
+
+  try {
+    const db = await getDb();
+    const user = await db.collection("users").findOne(
+      buildUserSelector(userId),
+      { projection: { password: 0 } }
+    );
+    return NextResponse.json({
+      authenticated: true,
+      token,
+      role: user?.role || null,
+      name: user?.name || user?.email || "Verified operator",
+      email: user?.email || null,
+    });
+  } catch {
+    return NextResponse.json({ authenticated: true, token });
+  }
 }
 
 export async function POST(req: Request) {
@@ -80,9 +118,15 @@ export async function POST(req: Request) {
       if (user.status === "suspended") return NextResponse.json({ error: "This account has been suspended" }, { status: 403 });
       const role = typeof user.role === "string" ? user.role : "field_agent";
       await users.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date().toISOString() } });
-      return NextResponse.json({ token: createAuthToken(String(user._id), role), role, name: user.name || email.split("@")[0], email, mode: "mongo" });
+      return buildAuthenticatedResponse({
+        userId: String(user._id),
+        role,
+        name: user.name || email.split("@")[0],
+        email,
+        mode: "mongo",
+      });
     } catch (databaseError) {
-      if (process.env.AUTH_ALLOW_LOCAL_FALLBACK === "true") {
+      if (process.env.NODE_ENV !== "production" || process.env.AUTH_ALLOW_LOCAL_FALLBACK === "true") {
         return handleWithLocalStore(action, { name, phone: phone || "", email, password });
       }
       console.error("Authentication database unavailable", databaseError);
@@ -99,4 +143,10 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Unexpected authentication error" }, { status: 500 });
   }
+}
+
+export async function DELETE() {
+  const response = NextResponse.json({ success: true });
+  response.headers.set("Set-Cookie", clearAuthCookie());
+  return response;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { FcGoogle } from "react-icons/fc";
 
 type AuthResult = { token: string; role: string; name?: string; email?: string };
 
@@ -15,6 +16,12 @@ export default function AuthForm({ onAuth }: { onAuth: (result: AuthResult) => v
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  function startGoogleAuth() {
+    setError("");
+    setNotice("");
+    window.location.href = "/api/auth/google/start";
+  }
 
   function switchMode(nextMode: "login" | "register") {
     setMode(nextMode);
@@ -79,6 +86,22 @@ export default function AuthForm({ onAuth }: { onAuth: (result: AuthResult) => v
         {notice && <div role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{notice}</div>}
         <button disabled={loading} className="w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950 shadow-lg shadow-cyan-500/20 hover:bg-cyan-300 disabled:cursor-wait disabled:opacity-60">{loading ? "Securing your account…" : mode === "login" ? "Sign in securely" : "Create field-agent account"}</button>
       </form>
+
+      <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <span className="h-px flex-1 bg-slate-800" />
+        <span>or</span>
+        <span className="h-px flex-1 bg-slate-800" />
+      </div>
+
+      <button
+        type="button"
+        onClick={startGoogleAuth}
+        disabled={loading}
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-black text-slate-950 shadow-lg shadow-slate-950/20 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
+      >
+        <FcGoogle className="text-xl" aria-hidden="true" />
+        Continue with Google
+      </button>
 
       <p className="text-center text-xs leading-5 text-slate-400">Passwords are hashed with bcrypt. New registrations receive field-agent access; elevated roles require administrator approval.</p>
     </div>

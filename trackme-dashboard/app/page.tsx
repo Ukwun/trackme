@@ -40,16 +40,21 @@ export default function DashboardPage() {
   const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState("");
 
-  const handleAuth = useCallback((result: { token: string; role: string; name?: string; email?: string }) => {
+  const persistAuth = useCallback((result: { token: string; role?: string | null; name?: string | null; email?: string | null }) => {
     window.localStorage.setItem("tm_auth_token", result.token);
-    window.localStorage.setItem("tm_auth_role", result.role);
+    if (result.role) window.localStorage.setItem("tm_auth_role", result.role);
     if (result.name) window.localStorage.setItem("tm_auth_name", result.name);
     if (result.email) window.localStorage.setItem("tm_auth_email", result.email);
     setToken(result.token);
-    setRole(result.role);
+    setRole(result.role || getClientSession().role);
     window.dispatchEvent(new Event("tm-auth-changed"));
   }, []);
+
+  const handleAuth = useCallback((result: { token: string; role: string; name?: string; email?: string }) => {
+    persistAuth(result);
+  }, [persistAuth]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -61,9 +66,38 @@ export default function DashboardPage() {
     };
 
     syncAuthState();
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("authError");
+    if (authError) {
+      setAuthNotice(
+        authError === "google-not-configured"
+          ? "Google sign-in is waiting for GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the deployment environment."
+          : "Google sign-in could not be completed. Please try again or use email and password."
+      );
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    const hydrateServerSession = async () => {
+      try {
+        const response = await fetch("/api/auth?action=session", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data?.authenticated && data?.token) {
+          persistAuth(data);
+          if (params.get("auth") === "google") {
+            setAuthNotice("Google sign-in complete. Your TrackMe workspace is ready.");
+            window.history.replaceState({}, "", window.location.pathname);
+          }
+        }
+      } catch {
+        // Local session remains authoritative if the server session cannot be read.
+      }
+    };
+
+    void hydrateServerSession();
     window.addEventListener("tm-auth-changed", syncAuthState);
     return () => window.removeEventListener("tm-auth-changed", syncAuthState);
-  }, []);
+  }, [persistAuth]);
 
   useEffect(() => {
     if (!token) return;
@@ -168,6 +202,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300">Secure identity portal</p>
                   <h2 className="mt-2 text-2xl font-black text-white">Access your TrackMe workspace</h2>
                   <p className="mt-1 text-sm text-slate-400">Sign in or create an account using your verified information.</p>
+                  {authNotice && <p className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-400/10 p-3 text-sm text-cyan-100">{authNotice}</p>}
                 </div>
                 <AuthForm onAuth={handleAuth} />
               </section>
@@ -202,6 +237,7 @@ export default function DashboardPage() {
               className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
               onClick={() => {
                 if (typeof window !== "undefined") {
+                  void fetch("/api/auth", { method: "DELETE" });
                   window.localStorage.removeItem("tm_auth_token");
                   window.localStorage.removeItem("tm_auth_role");
                   window.localStorage.removeItem("tm_auth_name");

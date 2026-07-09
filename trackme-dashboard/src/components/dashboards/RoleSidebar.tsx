@@ -26,7 +26,8 @@ export default function RoleSidebar({ role }: { role: string }) {
     return () => window.removeEventListener("tm-auth-changed", sync);
   }, []);
 
-  function signOut() {
+  async function signOut() {
+    await fetch("/api/auth", { method: "DELETE", keepalive: true }).catch(() => undefined);
     for (const key of ["tm_auth_token", "tm_auth_role", "tm_auth_name", "tm_auth_email"]) window.localStorage.removeItem(key);
     window.dispatchEvent(new Event("tm-auth-changed"));
     window.location.assign("/");
