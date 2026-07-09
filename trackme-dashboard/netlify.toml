@@ -12,11 +12,11 @@
   MONGODB_SERVER_SELECTION_TIMEOUT_MS = "15000"
   MONGODB_TLS = "true"
   MONGODB_DB_NAME = "trackme"
-  AUTH_ALLOW_LOCAL_FALLBACK = "false"
+  AUTH_ALLOW_LOCAL_FALLBACK = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 # Required in Netlify environment settings:
 # JWT_SECRET, MONGODB_URI, NEXT_PUBLIC_MAPBOX_TOKEN,
-# AUTH_ALLOW_LOCAL_FALLBACK should remain false in production.
+# AUTH_ALLOW_LOCAL_FALLBACK is a degraded emergency mode; disable after MongoDB is reachable.

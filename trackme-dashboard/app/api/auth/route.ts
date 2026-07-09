@@ -32,12 +32,30 @@ async function handleWithLocalStore(action: "register" | "login", details: { nam
       password: await bcrypt.hash(password, 12), role: "field_agent", createdAt: new Date().toISOString(),
     };
     localUsers.set(email, user);
-    return NextResponse.json({ success: true, mode: "local-dev" }, { status: 201 });
+    const token = createAuthToken(user.id, user.role);
+    const response = NextResponse.json({
+      success: true,
+      token,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+      mode: "degraded-fallback",
+      warning: "Database is unavailable, so this temporary session is not durable.",
+    }, { status: 201 });
+    response.headers.set("Set-Cookie", createAuthCookie(token));
+    return response;
   }
   const user = localUsers.get(email);
   if (!user || !(await bcrypt.compare(password, user.password))) return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   const token = createAuthToken(user.id, user.role);
-  const response = NextResponse.json({ token, role: user.role, name: user.name, email: user.email, mode: "local-dev" });
+  const response = NextResponse.json({
+    token,
+    role: user.role,
+    name: user.name,
+    email: user.email,
+    mode: "degraded-fallback",
+    warning: "Database is unavailable, so this temporary session is not durable.",
+  });
   response.headers.set("Set-Cookie", createAuthCookie(token));
   return response;
 }

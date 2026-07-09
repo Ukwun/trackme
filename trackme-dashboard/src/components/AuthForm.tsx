@@ -46,6 +46,10 @@ export default function AuthForm({ onAuth }: { onAuth: (result: AuthResult) => v
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Authentication failed");
+      if (data.token) {
+        onAuth(data);
+        return;
+      }
       if (mode === "register") {
         setNotice("Account created securely. Sign in to open your field-agent workspace.");
         setPassword("");
