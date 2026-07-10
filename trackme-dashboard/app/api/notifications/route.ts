@@ -8,13 +8,17 @@ import { deliverNotification } from "../../../src/api/notificationDelivery";
 export async function POST(req: Request) {
   const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await req.json();
-  const { message, type, delivery } = body;
+
+  const body = await req.json().catch(() => ({}));
+  const { message, type, delivery } = body as { message?: string; type?: string; delivery?: string[] };
+
   if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
+
   const db = await getDb();
-  const channels = Array.isArray(delivery)
-    ? delivery.filter((channel: string) => ["sms", "push", "email"].includes(channel))
-    : [];
+  const channels = (Array.isArray(delivery)
+    ? delivery.filter((channel): channel is "sms" | "push" | "email" => ["sms", "push", "email"].includes(channel))
+    : []) as Array<"sms" | "push" | "email">;
+
   const notification = {
     userId,
     message,
@@ -80,6 +84,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const { userId } = await resolveSession(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const db = await getDb();
     const notifications = await db.collection("notifications").find({ userId }).sort({ createdAt: -1 }).toArray();

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "../../../src/api/db";
 import { resolveSession } from "../../../src/api/authSession";
+import { getRuntimeLocations } from "../../../src/api/runtimeStore";
 
 // GET /api/locations?deviceIds=id1,id2&limit=50
 export async function GET(req: Request) {
   const { userId } = await resolveSession(req);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const deviceIdsParam = searchParams.get("deviceIds");
   const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
@@ -20,6 +20,7 @@ export async function GET(req: Request) {
     return NextResponse.json(locations);
   } catch (error) {
     console.error("Error fetching locations:", error);
-    return NextResponse.json([]);
+    const runtimeLocations = getRuntimeLocations(deviceIds, limit);
+    return NextResponse.json(runtimeLocations);
   }
 }

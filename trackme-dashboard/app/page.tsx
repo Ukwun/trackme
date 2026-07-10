@@ -107,6 +107,26 @@ export default function DashboardPage() {
   }, [persistAuth]);
 
   useEffect(() => {
+    const handleRealtimeLocation = (event: Event) => {
+      const data = (event as CustomEvent<any>).detail;
+      if (!data?.deviceId) return;
+      setLocations((previous) => {
+        const filtered = previous.filter((location) => location.deviceId !== data.deviceId);
+        return [...filtered, data];
+      });
+      setUnitTrails((previous) => {
+        const trail = previous[data.deviceId] || [];
+        const nextTrail = [...trail, [data.lng, data.lat]].slice(-20);
+        return { ...previous, [data.deviceId]: nextTrail };
+      });
+      setSelectedUnit((current: any) => (current?.deviceId === data.deviceId ? data : current));
+    };
+
+    window.addEventListener("tm-location-update", handleRealtimeLocation as EventListener);
+    return () => window.removeEventListener("tm-location-update", handleRealtimeLocation as EventListener);
+  }, []);
+
+  useEffect(() => {
     if (!token) return;
     const socket = connectSocket();
 

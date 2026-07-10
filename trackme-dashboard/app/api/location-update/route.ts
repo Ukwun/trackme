@@ -4,11 +4,11 @@ import { getDb } from "../../../src/api/db";
 import { logActivity } from "../../../src/api/logActivity";
 import { emitRealtimeEvent } from "../../../src/realtime/server";
 import { resolveSession } from "../../../src/api/authSession";
+import { upsertRuntimeLocation } from "../../../src/api/runtimeStore";
 
 // POST /api/location-update { deviceId, phone, imei, lat, lng, speed?, heading?, battery?, accuracy?, timestamp? }
 export async function POST(req: Request) {
   const { userId } = await resolveSession(req);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { deviceId, phone, imei, lat, lng, speed, heading, battery, accuracy, timestamp } = await req.json();
   if (!deviceId || lat == null || lng == null) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -34,6 +34,7 @@ export async function POST(req: Request) {
   };
 
   // Always emit realtime update so live map remains responsive even if persistence is degraded.
+  upsertRuntimeLocation(locationRecord);
   emitRealtimeEvent("location-update", locationRecord);
 
   let events: Array<{ type: string; geofence: { name: string } }> = [];

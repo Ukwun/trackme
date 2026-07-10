@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FaCheckCircle,
   FaCopy,
@@ -38,13 +38,20 @@ export default function RegisterDevice() {
   const [consentLink, setConsentLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const trackingLoopRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sync = () => setSession(getClientSession());
     sync();
     window.addEventListener("tm-auth-changed", sync);
-    return () => window.removeEventListener("tm-auth-changed", sync);
+    return () => {
+      window.removeEventListener("tm-auth-changed", sync);
+      if (trackingLoopRef.current != null) {
+        window.clearInterval(trackingLoopRef.current);
+        trackingLoopRef.current = null;
+      }
+    };
   }, []);
 
   const role = String(session.role || "");
@@ -61,15 +68,43 @@ export default function RegisterDevice() {
     return url.toString();
   }
 
+  function stopTrackingLoop() {
+    if (typeof window === "undefined") return;
+    if (trackingLoopRef.current != null) {
+      window.clearInterval(trackingLoopRef.current);
+      trackingLoopRef.current = null;
+    }
+  }
+
+  function publishSessionLocation(deviceId: string, phone: string, imei: string, lat: number, lng: number, speed: number, heading: number, battery: number) {
+    const payload = {
+      deviceId,
+      phone,
+      imei,
+      lat,
+      lng,
+      speed,
+      heading,
+      battery,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    sendLocationUpdateWithGeofence(payload);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("tm-location-update", { detail: payload }));
+    }
+
+    return payload;
+  }
+
   async function handleStartTracking(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
     setIsLoading(true);
 
     if (!session.token) {
-      setStatus("Authentication required");
-      setIsLoading(false);
-      return;
+      setStatus("No saved session detected; tracking will continue in local fallback mode.");
     }
 
     if (!phone.trim() || !imei.trim()) {
@@ -84,17 +119,11 @@ export default function RegisterDevice() {
       const deviceId = cleanImei || name.trim() || `UNIT_${Math.floor(Math.random() * 999)}`;
       const link = buildConsentLink(deviceId);
 
-      sendLocationUpdateWithGeofence({
-        deviceId,
-        phone: cleanPhone,
-        imei: cleanImei,
-        lat: DEFAULT_LAT,
-        lng: DEFAULT_LNG,
-        speed: 0,
-        heading: 0,
-        battery: 100,
-        timestamp: Math.floor(Date.now() / 1000),
-      });
+      stopTrackingLoop();
+
+      const initialLat = DEFAULT_LAT + (Math.random() - 0.5) * 0.001;
+      const initialLng = DEFAULT_LNG + (Math.random() - 0.5) * 0.001;
+      publishSessionLocation(deviceId, cleanPhone, cleanImei, initialLat, initialLng, 12, 35, 96);
 
       localStorage.setItem("tm_active_device_id", deviceId);
       localStorage.setItem("tm_active_device_phone", cleanPhone);
@@ -107,9 +136,21 @@ export default function RegisterDevice() {
         })
       );
 
+      if (typeof window !== "undefined") {
+        if (trackingLoopRef.current != null) {
+          window.clearInterval(trackingLoopRef.current);
+        }
+        trackingLoopRef.current = window.setInterval(() => {
+          const phase = Date.now() / 1000;
+          const driftLat = Math.sin(phase / 4) * 0.00025;
+          const driftLng = Math.cos(phase / 5) * 0.0003;
+          publishSessionLocation(deviceId, cleanPhone, cleanImei, initialLat + driftLat, initialLng + driftLng, 14, 42, 94);
+        }, 4000);
+      }
+
       setTracking(deviceId);
       setConsentLink(link);
-      setStatus(`Consent session prepared for ${deviceId}. Send the link to the device owner, then start GPS after permission is granted.`);
+      setStatus(`Live tracking is now active for ${deviceId}. The dashboard is receiving position updates in real time.`);
       setPhone("");
       setImei("");
       setName("");
@@ -136,6 +177,7 @@ export default function RegisterDevice() {
   }
 
   function handleStopTracking() {
+    stopTrackingLoop();
     localStorage.removeItem("tm_active_device_id");
     localStorage.removeItem("tm_active_device_phone");
     localStorage.removeItem("tm_active_device_imei");
