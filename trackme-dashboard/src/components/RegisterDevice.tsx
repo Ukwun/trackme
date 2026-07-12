@@ -65,6 +65,8 @@ export default function RegisterDevice() {
     const url = new URL(window.location.origin);
     url.searchParams.set("track", deviceId);
     url.searchParams.set("consent", "required");
+    if (phone) url.searchParams.set("phone", phone);
+    if (imei) url.searchParams.set("imei", imei);
     return url.toString();
   }
 
@@ -169,6 +171,17 @@ export default function RegisterDevice() {
       })
         .catch(() => undefined)
         .finally(() => clearTimeout(timeoutId));
+
+      // Create a one-time server-side consent record so anonymous device clients can post locations.
+      try {
+        await fetch("/api/consent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+          body: JSON.stringify({ deviceId, phone: cleanPhone, imei: cleanImei, name }),
+        }).catch(() => undefined);
+      } catch {
+        // Non-fatal: consent creation best-effort
+      }
     } catch (err: unknown) {
       setStatus("Error: " + (err instanceof Error ? err.message : "Unable to prepare tracking session"));
     } finally {

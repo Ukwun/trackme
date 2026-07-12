@@ -33,9 +33,36 @@ export async function POST(req: Request) {
     timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : Math.floor(Date.now() / 1000),
   };
 
+  // Authorization: allow if session present OR a prior consent exists for this device (one-time consent).
+  if (!userId) {
+    try {
+      const db = await getDb();
+      const now = new Date().toISOString();
+        const ors: any[] = [{ deviceId }, { imei }, { phone }].filter(Boolean as any);
+        // Accept consent if it's permanent (permanent flag or expiresAt === null) or not expired
+        const consent = await db.collection("authorized_consents").findOne({
+          $and: [
+            { granted: true },
+            { $or: [ { permanent: true }, { expiresAt: null }, { expiresAt: { $gt: now } } ] },
+            { $or: ors },
+          ],
+        });
+      if (!consent) {
+        return NextResponse.json({ error: "Consent required for anonymous location updates" }, { status: 403 });
+      }
+    } catch (e) {
+      console.error("Consent verification failed", e);
+      return NextResponse.json({ error: "Unable to verify consent" }, { status: 503 });
+    }
+  }
+
   // Always emit realtime update so live map remains responsive even if persistence is degraded.
-  upsertRuntimeLocation(locationRecord);
-  emitRealtimeEvent("location-update", locationRecord);
+  try {
+    upsertRuntimeLocation(locationRecord);
+    emitRealtimeEvent("location-update", locationRecord);
+  } catch (e) {
+    console.error("Runtime emission failed", e);
+  }
 
   let events: Array<{ type: string; geofence: { name: string } }> = [];
   let persisted = false;
@@ -49,13 +76,7 @@ export async function POST(req: Request) {
     // Geofence event detection
     events = await checkGeofenceEvents(deviceId, [normalizedLat, normalizedLng]);
     for (const evt of events) {
-      await logActivity({
-        action: `geofence:${evt.type}`,
-        meta: {
-          deviceId,
-          geofence: evt.geofence.name,
-        },
-      });
+      await logActivity({ action: `geofence:${evt.type}`, meta: { deviceId, geofence: evt.geofence.name } });
       emitRealtimeEvent("geofence-update", {
         deviceId,
         type: evt.type,
@@ -63,7 +84,8 @@ export async function POST(req: Request) {
         timestamp: new Date().toISOString(),
       });
     }
-  } catch {
+  } catch (err) {
+    console.error("Persistence or geofence check failed", err);
     degraded = true;
   }
 

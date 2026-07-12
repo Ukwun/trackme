@@ -1,6 +1,35 @@
 import { io } from "socket.io-client";
 
-let socket: ReturnType<typeof io> | null = null;
+let socket: any = null;
+let pollingIntervalId: number | null = null;
+
+function startPolling() {
+  if (typeof window === "undefined") return;
+  if (pollingIntervalId) return;
+  const poll = async () => {
+    try {
+      const res = await fetch("/api/realtime/poll");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.events) {
+        for (const ev of data.events) {
+          window.dispatchEvent(new CustomEvent(`tm-poll-${ev.type}`, { detail: ev.payload }));
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+  poll();
+  pollingIntervalId = window.setInterval(poll, 3000);
+}
+
+function stopPolling() {
+  if (pollingIntervalId) {
+    clearInterval(pollingIntervalId);
+    pollingIntervalId = null;
+  }
+}
 
 export type LocationUpdatePayload = {
   deviceId: string;
@@ -22,12 +51,63 @@ export function connectSocket() {
     if (typeof window !== "undefined" && !isNetlify) {
       void fetch("/api/socketio").catch(() => undefined);
     }
-    socket = io({
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
-      autoConnect: !isNetlify,
-      reconnection: !isNetlify,
-    });
+    // Exponential backoff on connection failures and fallback to polling
+    let attempts = 0;
+    const maxAttempts = 5;
+    const tryConnect = () => {
+      attempts++;
+      socket = io({
+        path: "/api/socketio",
+        transports: ["websocket", "polling"],
+        autoConnect: true,
+        reconnection: false,
+      });
+
+      socket.on("connect", () => {
+        stopPolling();
+      });
+
+      socket.on("connect_error", (err: any) => {
+        socket?.close();
+        socket = null;
+        if (attempts < maxAttempts) {
+          const wait = Math.min(2000 * attempts, 10000);
+          setTimeout(tryConnect, wait);
+        } else {
+          // give up and start HTTP polling
+          startPolling();
+          // Install a lightweight faux-socket so callers using socket.on/off continue to work
+          const listeners: Record<string, Set<any>> = {};
+          socket = {
+            on: (ev: string, cb: any) => {
+              listeners[ev] = listeners[ev] || new Set();
+              listeners[ev].add(cb);
+              // listen to polled window events and forward
+              const handler = (e: any) => cb(e.detail);
+              // store handler to be able to remove later
+              (cb as any).__pollHandler = handler;
+              window.addEventListener(`tm-poll-${ev}`, handler);
+            },
+            off: (ev: string, cb: any) => {
+              if (!listeners[ev]) return;
+              listeners[ev].delete(cb);
+              const handler = (cb as any).__pollHandler;
+              if (handler) window.removeEventListener(`tm-poll-${ev}`, handler);
+            },
+            emit: (ev: string, payload: any) => {
+              // no-op for polled mode, but dispatch local window event for in-page listeners
+              window.dispatchEvent(new CustomEvent(`tm-poll-${ev}`, { detail: payload }));
+            },
+            close: () => {
+              stopPolling();
+              socket = null;
+            },
+          };
+        }
+      });
+    };
+
+    tryConnect();
   }
   return socket;
 }
