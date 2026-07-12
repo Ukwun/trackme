@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FaCheckCircle,
   FaCopy,
@@ -13,7 +13,6 @@ import {
 } from "react-icons/fa";
 import { UnauthorizedState } from "./ui/OperationalState";
 import { getClientSession } from "../lib/clientAuth";
-import { sendLocationUpdateWithGeofence } from "../realtime/socket";
 
 const ALLOWED_ROLES = [
   "super_admin",
@@ -25,9 +24,6 @@ const ALLOWED_ROLES = [
   "analyst",
 ];
 
-const DEFAULT_LAT = 6.5244;
-const DEFAULT_LNG = 3.3792;
-
 export default function RegisterDevice() {
   const [phone, setPhone] = useState("");
   const [imei, setImei] = useState("");
@@ -38,7 +34,6 @@ export default function RegisterDevice() {
   const [consentLink, setConsentLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const trackingLoopRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -47,10 +42,6 @@ export default function RegisterDevice() {
     window.addEventListener("tm-auth-changed", sync);
     return () => {
       window.removeEventListener("tm-auth-changed", sync);
-      if (trackingLoopRef.current != null) {
-        window.clearInterval(trackingLoopRef.current);
-        trackingLoopRef.current = null;
-      }
     };
   }, []);
 
@@ -62,42 +53,12 @@ export default function RegisterDevice() {
 
   function buildConsentLink(deviceId: string) {
     if (typeof window === "undefined") return "";
-    const url = new URL(window.location.origin);
+    const url = new URL("/consent", window.location.origin);
     url.searchParams.set("track", deviceId);
     url.searchParams.set("consent", "required");
     if (phone) url.searchParams.set("phone", phone);
     if (imei) url.searchParams.set("imei", imei);
     return url.toString();
-  }
-
-  function stopTrackingLoop() {
-    if (typeof window === "undefined") return;
-    if (trackingLoopRef.current != null) {
-      window.clearInterval(trackingLoopRef.current);
-      trackingLoopRef.current = null;
-    }
-  }
-
-  function publishSessionLocation(deviceId: string, phone: string, imei: string, lat: number, lng: number, speed: number, heading: number, battery: number) {
-    const payload = {
-      deviceId,
-      phone,
-      imei,
-      lat,
-      lng,
-      speed,
-      heading,
-      battery,
-      timestamp: Math.floor(Date.now() / 1000),
-    };
-
-    sendLocationUpdateWithGeofence(payload);
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("tm-location-update", { detail: payload }));
-    }
-
-    return payload;
   }
 
   async function handleStartTracking(e: React.FormEvent) {
@@ -121,12 +82,6 @@ export default function RegisterDevice() {
       const deviceId = cleanImei || name.trim() || `UNIT_${Math.floor(Math.random() * 999)}`;
       const link = buildConsentLink(deviceId);
 
-      stopTrackingLoop();
-
-      const initialLat = DEFAULT_LAT + (Math.random() - 0.5) * 0.001;
-      const initialLng = DEFAULT_LNG + (Math.random() - 0.5) * 0.001;
-      publishSessionLocation(deviceId, cleanPhone, cleanImei, initialLat, initialLng, 12, 35, 96);
-
       localStorage.setItem("tm_active_device_id", deviceId);
       localStorage.setItem("tm_active_device_phone", cleanPhone);
       localStorage.setItem("tm_active_device_imei", cleanImei);
@@ -138,21 +93,9 @@ export default function RegisterDevice() {
         })
       );
 
-      if (typeof window !== "undefined") {
-        if (trackingLoopRef.current != null) {
-          window.clearInterval(trackingLoopRef.current);
-        }
-        trackingLoopRef.current = window.setInterval(() => {
-          const phase = Date.now() / 1000;
-          const driftLat = Math.sin(phase / 4) * 0.00025;
-          const driftLng = Math.cos(phase / 5) * 0.0003;
-          publishSessionLocation(deviceId, cleanPhone, cleanImei, initialLat + driftLat, initialLng + driftLng, 14, 42, 94);
-        }, 4000);
-      }
-
       setTracking(deviceId);
       setConsentLink(link);
-      setStatus(`Live tracking is now active for ${deviceId}. The dashboard is receiving position updates in real time.`);
+      setStatus(`Invite ready for ${deviceId}. Live tracking will begin only after the phone owner accepts and grants GPS permission.`);
       setPhone("");
       setImei("");
       setName("");
@@ -172,16 +115,6 @@ export default function RegisterDevice() {
         .catch(() => undefined)
         .finally(() => clearTimeout(timeoutId));
 
-      // Create a one-time server-side consent record so anonymous device clients can post locations.
-      try {
-        await fetch("/api/consent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
-          body: JSON.stringify({ deviceId, phone: cleanPhone, imei: cleanImei, name }),
-        }).catch(() => undefined);
-      } catch {
-        // Non-fatal: consent creation best-effort
-      }
     } catch (err: unknown) {
       setStatus("Error: " + (err instanceof Error ? err.message : "Unable to prepare tracking session"));
     } finally {
@@ -190,7 +123,6 @@ export default function RegisterDevice() {
   }
 
   function handleStopTracking() {
-    stopTrackingLoop();
     localStorage.removeItem("tm_active_device_id");
     localStorage.removeItem("tm_active_device_phone");
     localStorage.removeItem("tm_active_device_imei");
@@ -301,7 +233,7 @@ export default function RegisterDevice() {
             </div>
           )}
           <div className="text-xs text-emerald-100/70">
-            Initial marker: {DEFAULT_LAT.toFixed(4)}, {DEFAULT_LNG.toFixed(4)}
+            Waiting for the phone owner to accept the invite and provide the first GPS fix.
           </div>
         </div>
       )}

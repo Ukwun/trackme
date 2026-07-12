@@ -82,12 +82,16 @@ export default function IncidentPanel() {
     }
 
     const socket = connectSocket();
-    socket.on("incident-update", (data) => {
-      setIncident(data);
+    socket.on("incident-update", (data: unknown) => {
+      if (data && typeof data === "object") {
+        setIncident(data as any);
+      }
       setError(null);
     });
-    socket.on("unit-update", (data) => {
-      setUnits(data);
+    socket.on("unit-update", (data: unknown) => {
+      if (Array.isArray(data)) {
+        setUnits(data as any[]);
+      }
     });
     return () => {
       socket.off("incident-update");

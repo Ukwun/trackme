@@ -10,10 +10,18 @@ import {
   UnauthorizedState,
 } from "./ui/OperationalState";
 
+type Geofence = {
+  id: string;
+  name: string;
+  type?: string;
+  status?: string;
+  [key: string]: unknown;
+};
+
 const ALLOWED_ROLES = ["super_admin", "control_room", "dispatcher", "analyst"];
 
 export default function GeofencePanel() {
-  const [geofences, setGeofences] = useState<any[]>([]);
+  const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<ReturnType<typeof getClientSession> | null>(null);
@@ -56,9 +64,16 @@ export default function GeofencePanel() {
     }
 
     const socket = connectSocket();
-    socket.on("geofence-update", (data) => {
-      setGeofences(data);
-      setError(null);
+    socket.on("geofence-update", (data: unknown) => {
+      if (Array.isArray(data)) {
+        setGeofences(data as Geofence[]);
+        setError(null);
+      } else if (data && typeof data === "object") {
+        setGeofences([data as Geofence]);
+        setError(null);
+      } else {
+        setError("Invalid geofence payload");
+      }
       setLoading(false);
     });
     return () => {
@@ -129,12 +144,12 @@ export default function GeofencePanel() {
   return (
     <div className="tm-card p-4 mb-4">
       <h2 className="tm-heading text-lg font-semibold mb-2">Geofences</h2>
-      <ul className="divide-y divide-[var(--tm-border)]">
+      <ul className="divide-y divide-(--tm-border)">
         {geofences.map((geo) => (
           <li key={geo.id} className="py-2 flex items-center justify-between">
             <div>
-              <div className="font-semibold text-[var(--tm-text-main)]">{geo.name}</div>
-              <div className="text-xs text-[var(--tm-text-secondary)]">{geo.type}</div>
+              <div className="font-semibold text-(--tm-text-main)">{geo.name}</div>
+              <div className="text-xs text-(--tm-text-secondary)">{geo.type}</div>
             </div>
             <span className={`text-xs ${geo.status === 'Active' ? 'text-green-500' : 'text-gray-400'}`}>{geo.status}</span>
           </li>

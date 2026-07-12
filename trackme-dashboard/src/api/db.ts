@@ -34,8 +34,8 @@ function resolveDbName(uri: string): string {
   return 'trackme';
 }
 
-const uri = resolveMongoUri();
-const dbName = resolveDbName(uri);
+let uri: string | null = null;
+let dbName: string | null = null;
 const serverSelectionTimeoutMS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 12000);
 const family = process.env.MONGODB_FAMILY ? Number(process.env.MONGODB_FAMILY) : undefined;
 const tls = process.env.MONGODB_TLS ? process.env.MONGODB_TLS === 'true' : true;
@@ -85,7 +85,16 @@ async function ensureIndexes(database: Db) {
 
 export async function getDb() {
   if (!uri) {
+    uri = resolveMongoUri();
+    dbName = resolveDbName(uri);
+  }
+
+  if (!uri) {
     throw new Error('MONGODB_URI is not set in environment variables');
+  }
+
+  if (!dbName) {
+    dbName = 'trackme';
   }
 
   // Return existing connection if available

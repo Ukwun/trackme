@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "../../../src/api/db";
 import { resolveSession } from "../../../src/api/authSession";
 import { logActivity } from "../../../src/api/logActivity";
+import { upsertRuntimeConsent, getRuntimeConsent, revokeRuntimeConsent } from "../../../src/api/runtimeStore";
 
 // Create consent. Optional `expiresInDays` to set an expiry; default = 3650 days (~10 years)
 export async function POST(req: Request) {
@@ -40,8 +41,16 @@ export async function POST(req: Request) {
     await logActivity({ userId: userId || null, action: "consent:grant", meta: { deviceId, imei, phone } });
     return NextResponse.json({ success: true, consent: doc });
   } catch (e) {
-    console.error("Consent creation failed", e);
-    return NextResponse.json({ error: "Consent creation failed" }, { status: 500 });
+    // DB unavailable — fall back to runtime consent store so local workflows continue
+    console.error("Consent creation DB failed, falling back to runtime store", e);
+    try {
+      const runtimeDoc = await upsertRuntimeConsent({ deviceId, imei, phone, name, granted: true, grantedBy: userId || null, grantedAt: new Date().toISOString(), expiresAt: null, permanent: true });
+      await logActivity({ userId: userId || null, action: "consent:grant:runtime", meta: { deviceId, imei, phone } }).catch(() => undefined);
+      return NextResponse.json({ success: true, consent: runtimeDoc, runtime: true });
+    } catch (re) {
+      console.error("Runtime consent creation also failed", re);
+      return NextResponse.json({ error: "Consent creation failed" }, { status: 500 });
+    }
   }
 }
 
@@ -69,11 +78,22 @@ export async function GET(req: Request) {
         { $or: ors },
       ],
     });
-    if (!consent) return NextResponse.json({ consent: null });
-    return NextResponse.json({ consent });
+    if (consent) return NextResponse.json({ consent });
+    // fallback to runtime store
+    const runtime = await getRuntimeConsent({ deviceId, imei, phone });
+    if (runtime) return NextResponse.json({ consent: runtime, runtime: true });
+    return NextResponse.json({ consent: null });
   } catch (e) {
-    console.error("Consent check failed", e);
-    return NextResponse.json({ error: "Consent check failed" }, { status: 500 });
+    // DB error: try runtime store
+    console.error("Consent check DB failed, trying runtime store", e);
+    try {
+      const runtime = await getRuntimeConsent({ deviceId, imei, phone });
+      if (runtime) return NextResponse.json({ consent: runtime, runtime: true });
+      return NextResponse.json({ consent: null });
+    } catch (re) {
+      console.error("Consent check failed (db+runtime)", re);
+      return NextResponse.json({ error: "Consent check failed" }, { status: 500 });
+    }
   }
 }
 
@@ -89,11 +109,11 @@ export async function DELETE(req: Request) {
     const db = await getDb();
     let result;
     if (deviceId || imei || phone) {
-      const selector: any = { $or: [] };
-      if (deviceId) selector.$or.push({ deviceId });
-      if (imei) selector.$or.push({ imei });
-      if (phone) selector.$or.push({ phone });
-      selector.$or.push({ granted: true });
+      const identities: Array<Record<string, string>> = [];
+      if (deviceId) identities.push({ deviceId });
+      if (imei) identities.push({ imei });
+      if (phone) identities.push({ phone });
+      const selector = { granted: true, $or: identities };
       result = await db.collection("authorized_consents").updateMany(selector, { $set: { granted: false, revokedAt: new Date().toISOString(), revokedBy: userId || null } });
     } else {
       const body = await req.json().catch(() => ({}));
@@ -104,7 +124,14 @@ export async function DELETE(req: Request) {
     await logActivity({ userId: userId || null, action: "consent:revoke", meta: { deviceId, imei, phone } });
     return NextResponse.json({ success: true, result });
   } catch (e) {
-    console.error("Consent revoke failed", e);
-    return NextResponse.json({ error: "Consent revoke failed" }, { status: 500 });
+    console.error("Consent revoke DB failed, falling back to runtime", e);
+    try {
+      const runtimeRes = await revokeRuntimeConsent({ deviceId, imei, phone });
+      await logActivity({ userId: userId || null, action: "consent:revoke:runtime", meta: { deviceId, imei, phone } }).catch(() => undefined);
+      return NextResponse.json({ success: true, result: runtimeRes, runtime: true });
+    } catch (re) {
+      console.error("Consent revoke failed (db+runtime)", re);
+      return NextResponse.json({ error: "Consent revoke failed" }, { status: 500 });
+    }
   }
 }

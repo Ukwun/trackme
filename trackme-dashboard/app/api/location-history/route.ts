@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ history, degraded: false });
   } catch (error) {
     console.error("Error loading location history:", error);
-    const history = getRuntimeLocations([deviceId], 1000).filter((row) => String(row.deviceId) === deviceId);
+    const history = (await getRuntimeLocations([deviceId], 1000)).filter((row) => String(row.deviceId) === deviceId);
     return NextResponse.json({ history, degraded: true });
   }
 }

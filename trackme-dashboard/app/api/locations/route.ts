@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     return NextResponse.json(locations);
   } catch (error) {
     console.error("Error fetching locations:", error);
-    const runtimeLocations = getRuntimeLocations(deviceIds, limit);
+    const runtimeLocations = await getRuntimeLocations(deviceIds, limit);
     return NextResponse.json(runtimeLocations);
   }
 }

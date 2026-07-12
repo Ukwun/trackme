@@ -4,12 +4,13 @@ import { getDb } from "../../../src/api/db";
 import { logActivity } from "../../../src/api/logActivity";
 import { emitRealtimeEvent } from "../../../src/realtime/server";
 import { resolveSession } from "../../../src/api/authSession";
-import { upsertRuntimeLocation } from "../../../src/api/runtimeStore";
+import { upsertRuntimeLocation, getRuntimeConsent } from "../../../src/api/runtimeStore";
 
 // POST /api/location-update { deviceId, phone, imei, lat, lng, speed?, heading?, battery?, accuracy?, timestamp? }
 export async function POST(req: Request) {
   const { userId } = await resolveSession(req);
-  const { deviceId, phone, imei, lat, lng, speed, heading, battery, accuracy, timestamp } = await req.json();
+  const body = await req.json();
+  const { deviceId, phone, imei, lat, lng, speed, heading, battery, accuracy, timestamp } = body;
   if (!deviceId || lat == null || lng == null) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
@@ -18,6 +19,9 @@ export async function POST(req: Request) {
   const normalizedLng = Number(lng);
   if (!Number.isFinite(normalizedLat) || !Number.isFinite(normalizedLng)) {
     return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
+  }
+  if (normalizedLat < -90 || normalizedLat > 90 || normalizedLng < -180 || normalizedLng > 180) {
+    return NextResponse.json({ error: "Coordinates out of range" }, { status: 400 });
   }
 
   const locationRecord = {
@@ -35,30 +39,36 @@ export async function POST(req: Request) {
 
   // Authorization: allow if session present OR a prior consent exists for this device (one-time consent).
   if (!userId) {
+    // First try DB consent lookup, but fall back to runtime in-memory consents if DB unavailable or missing
     try {
       const db = await getDb();
       const now = new Date().toISOString();
-        const ors: any[] = [{ deviceId }, { imei }, { phone }].filter(Boolean as any);
-        // Accept consent if it's permanent (permanent flag or expiresAt === null) or not expired
-        const consent = await db.collection("authorized_consents").findOne({
-          $and: [
-            { granted: true },
-            { $or: [ { permanent: true }, { expiresAt: null }, { expiresAt: { $gt: now } } ] },
-            { $or: ors },
-          ],
-        });
+      const ors: any[] = [{ deviceId }, { imei }, { phone }].filter(Boolean as any);
+      const consent = await db.collection("authorized_consents").findOne({
+        $and: [
+          { granted: true },
+          { $or: [ { permanent: true }, { expiresAt: null }, { expiresAt: { $gt: now } } ] },
+          { $or: ors },
+        ],
+      });
       if (!consent) {
-        return NextResponse.json({ error: "Consent required for anonymous location updates" }, { status: 403 });
+        const rt = await getRuntimeConsent({ deviceId, imei, phone });
+        if (!rt) {
+          return NextResponse.json({ error: "Consent required for anonymous location updates" }, { status: 403 });
+        }
       }
     } catch (e) {
-      console.error("Consent verification failed", e);
-      return NextResponse.json({ error: "Unable to verify consent" }, { status: 503 });
+      console.error("Consent verification DB failed, trying runtime", e);
+      const rt = await getRuntimeConsent({ deviceId, imei, phone });
+      if (!rt) {
+        return NextResponse.json({ error: "Consent required for anonymous location updates" }, { status: 403 });
+      }
     }
   }
 
   // Always emit realtime update so live map remains responsive even if persistence is degraded.
   try {
-    upsertRuntimeLocation(locationRecord);
+    await upsertRuntimeLocation(locationRecord);
     emitRealtimeEvent("location-update", locationRecord);
   } catch (e) {
     console.error("Runtime emission failed", e);
